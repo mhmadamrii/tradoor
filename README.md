@@ -74,11 +74,12 @@
 - Drawings belong to the market and show on every chart and timeframe of it
 - Watchlists, price alerts to Telegram, themes, a US economic calendar
 - Signed in with Telegram, the same workspace on every device
+- Thirteen languages, chosen in Settings: English, Spanish, French, Portuguese, Russian, Turkish, Chinese, Japanese, Korean, Thai, Vietnamese, Indonesian and Malay
 
 ### Fifteen exchanges
 
 <p align="center">
-  <img src="docs/screenshots/exchanges.webp" alt="The symbol search for BTC: fourteen exchanges' marks across the top, and BTC's markets on each of them, spot and perpetual, with price, change and volume, the busiest first" width="100%">
+  <img src="docs/screenshots/exchanges.webp" alt="The symbol search for BTC: fifteen exchanges' marks across the top, and BTC's markets on each of them, spot and perpetual, with price, change and volume, the busiest first" width="100%">
 </p>
 
 Binance, Bybit, OKX, Bitget, Kraken, Hyperliquid, Lighter, Gate, Aster, HTX, Bitfinex, Deribit, Coinbase, Bitstamp and BingX: some 17,700 markets in one search. Also TOTAL, TOTAL2, TOTAL3, BTC.D and the other market measures, the VIX, and the S&amp;P 500 and Nasdaq-100 as trade.xyz perpetuals.
@@ -89,7 +90,7 @@ Binance, Bybit, OKX, Bitget, Kraken, Hyperliquid, Lighter, Gate, Aster, HTX, Bit
   <img src="docs/screenshots/indicators.webp" alt="The indicator picker: a search box, the Built-in, Community and My scripts tabs, favourites, the built-ins by what they are for, and New Frost Script" width="440">
 </p>
 
-Built-in, Community and My scripts in one searchable picker, and New Frost Script to write your own. EMA ribbon, EMA 200, RSI, Stoch RSI, MACD, Bollinger Bands, Keltner, Ichimoku, VWAP and VWAP levels, anchored VWAP, volume delta, volume profile, key levels, swing structure map, sessions, moon phases and open interest, each with its own settings.
+Built-in, Community and My scripts in one searchable picker, and New Frost Script to write your own. EMA ribbon, EMA 200, RSI, Stoch RSI, MACD, Bollinger Bands, Keltner, Ichimoku, VWAP and VWAP levels, anchored VWAP, volume delta, volume profile, key levels, swing structure map, sessions, moon phases and open interest, each with its own settings, and those saved as the default it starts with. VWAP takes its anchor, price source, offset, bands in deviations or percent, and a timeframe of its own.
 
 ### DOM and tape
 
