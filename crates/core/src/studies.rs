@@ -74,6 +74,8 @@ pub enum Group {
     Oi,
     /// Bought less sold, in coins.
     Delta,
+    /// A VWAP of volume, in coins: no price, so a pane of its own.
+    Volume,
     /// A formula's own pane: one each, by its place among the chart's formulas.
     Formula(u8),
 }
@@ -94,6 +96,7 @@ impl Group {
             Self::Atr => "atr",
             Self::Oi => "oi",
             Self::Delta => "delta",
+            Self::Volume => "vol",
             Self::Formula(n) => FORMULA_PANES[usize::from(n) % FORMULA_PANES.len()],
         }
     }
@@ -160,14 +163,14 @@ pub static STUDIES: [StudyDefinition; 20] = [
     StudyDefinition { kind: StudyKind::StochRsi, short: "Stoch RSI", group: Group::Pct, params: &[p("rsi", 14, 2, 1000), p("stoch", 14, 2, 1000), p("k", 3, 1, 100), p("d", 3, 1, 100)] },
     StudyDefinition { kind: StudyKind::Macd, short: "MACD", group: Group::Macd, params: &[p("fast", 12, 1, 1000), p("slow", 26, 2, 1000), p("signal", 9, 1, 1000)] },
     StudyDefinition { kind: StudyKind::KeyLevels, short: "Key Levels", group: Group::Price, params: &[] },
-    // A band of 0 is not drawn. `source` 0 is (H+L+C)/3 (`source_price`); `offset` moves the lines by bars;
+    // A band of 0 is not drawn. `source` 0 is (H+L+C)/3 (`source_price`), 8 volume; `offset` moves the lines by bars;
     // `mode` 1 makes the bands percent of the VWAP; `hide` 1 draws nothing on daily bars and longer;
     // `timeframe` is a place in VWAP_TIMEFRAMES; `wait` 1 moves only as a bar of it closes.
     StudyDefinition {
         kind: StudyKind::Vwap,
         short: "VWAP",
         group: Group::Price,
-        params: &[p("anchor", 0, 0, 4), x("band1", 1.0, 0.0), x("band2", 0.0, 0.0), x("band3", 0.0, 0.0), p("source", 0, 0, 7), StudyParam { name: "offset", default: 0.0, min: -500.0, max: 500.0, step: 1.0 }, p("mode", 0, 0, 1), p("hide", 0, 0, 1), p("timeframe", 0, 0, 12), p("wait", 1, 0, 1)],
+        params: &[p("anchor", 0, 0, 4), x("band1", 1.0, 0.0), x("band2", 0.0, 0.0), x("band3", 0.0, 0.0), p("source", 0, 0, 8), StudyParam { name: "offset", default: 0.0, min: -500.0, max: 500.0, step: 1.0 }, p("mode", 0, 0, 1), p("hide", 0, 0, 1), p("timeframe", 0, 0, 12), p("wait", 1, 0, 1)],
     },
     // `periods` a bit each for the day, week, month, quarter and year; `previous` 1 labels the last of each too.
     StudyDefinition { kind: StudyKind::VwapLevels, short: "VWAP Levels", group: Group::Price, params: &[p("periods", 30, 1, 31), p("previous", 1, 0, 1), x("band", 1.0, 0.1)] },
@@ -258,6 +261,9 @@ impl StudySpec {
                     label += "%";
                 }
             }
+            if self.param(4) == 8 {
+                label += " · Volume";
+            }
             return label;
         }
         if self.params.is_empty() || self.kind == StudyKind::VwapLevels {
@@ -268,7 +274,7 @@ impl StudySpec {
     }
 
     pub fn group(&self) -> Group {
-        self.def().group
+        if self.kind == StudyKind::Vwap && self.param(4) == 8 { Group::Volume } else { self.def().group }
     }
 }
 
@@ -549,7 +555,7 @@ pub fn compute_study(spec: &StudySpec, candles: &[Candle]) -> ComputedStudy {
 /// until it is shown, its bars unread.
 pub fn idle_study(spec: &StudySpec) -> ComputedStudy {
     let def = spec.def();
-    ComputedStudy { id: spec.id(), kind: def.kind, label: spec.label(), group: def.group, params: spec.params.clone(), lines: Vec::new(), fills: Vec::new(), boxes: Vec::new(), segments: Vec::new(), markers: Vec::new(), stats: Vec::new(), candles: Vec::new(), art: None }
+    ComputedStudy { id: spec.id(), kind: def.kind, label: spec.label(), group: spec.group(), params: spec.params.clone(), lines: Vec::new(), fills: Vec::new(), boxes: Vec::new(), segments: Vec::new(), markers: Vec::new(), stats: Vec::new(), candles: Vec::new(), art: None }
 }
 
 pub fn compute_study_with(spec: &StudySpec, candles: &[Candle], inputs: &StudyInputs<'_>) -> ComputedStudy {
@@ -960,11 +966,12 @@ pub fn anchor_period(t: i64, anchor: usize) -> i64 {
     }
 }
 
-/// A bar's price as a VWAP's `source` reads it, from `[open, high, low, close]`:
+/// What a VWAP's `source` averages of a bar, from `[open, high, low, close, volume]`:
 /// (H+L+C)/3 first, as the usual VWAP, then the open, high, low and close,
-/// (H+L)/2, (O+H+L+C)/4 and (H+L+C+C)/4.
-fn source_price(source: usize, [o, h, l, c]: [f64; 4]) -> f64 {
+/// (H+L)/2, (O+H+L+C)/4, (H+L+C+C)/4, and the volume itself.
+fn source_price(source: usize, [o, h, l, c, v]: [f64; 5]) -> f64 {
     match source {
+        8 => v,
         1 => o,
         2 => h,
         3 => l,
@@ -1011,7 +1018,7 @@ fn anchored_on(candles: &[Candle], anchor: usize, source: usize, unit: i64, wait
             part = [part[0], part[1].max(c.high), part[2].min(c.low), c.close, part[4] + c.volume];
         } else {
             if at.is_some() {
-                let x = source_price(source, [part[0], part[1], part[2], part[3]]);
+                let x = source_price(source, part);
                 volume += part[4];
                 sum += x * part[4];
                 squares += x * x * part[4];
@@ -1019,7 +1026,7 @@ fn anchored_on(candles: &[Candle], anchor: usize, source: usize, unit: i64, wait
             at = Some(b);
             part = [c.open, c.high, c.low, c.close, c.volume];
         }
-        let x = source_price(source, [part[0], part[1], part[2], part[3]]);
+        let x = source_price(source, part);
         let v = volume + part[4];
         let figures = if v > 0.0 {
             let vwap = (sum + x * part[4]) / v;
@@ -1515,6 +1522,13 @@ mod tests {
         let near = |got: &Series, want: [f64; 2]| got.iter().zip(want).all(|(g, w)| (g.unwrap() - w).abs() < 1e-9);
         assert!(near(line(&percent, "upper1"), [102.0, 153.0]), "2% over the VWAP of the closes");
         assert!(near(line(&percent, "lower1"), [98.0, 147.0]));
+        // Volume averaged by itself: (1 × 1 + 1 × 1) / 2, in a pane of its own, as it is no price.
+        let volume = compute_study(&parse_studies("vwap:0:1:0:0:8", 12)[0], &candles);
+        assert_eq!(line(&volume, "vwap"), &vec![Some(1.0), Some(1.0)]);
+        assert_eq!((volume.group, volume.label.as_str()), (Group::Volume, "VWAP Session ±1 · Volume"));
+        let heavy = hourly("2026-08-03", &[(110.0, 90.0, 100.0, 1.0), (210.0, 190.0, 200.0, 3.0)]);
+        assert_eq!(line(&compute_study(&parse_studies("vwap:0:1:0:0:8", 12)[0], &heavy), "vwap"), &vec![Some(1.0), Some(2.5)], "(1 × 1 + 3 × 3) / 4");
+        assert_eq!(high.group, Group::Price);
     }
 
     #[test]

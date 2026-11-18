@@ -259,7 +259,7 @@ const PARAMS: Record<string, Record<string, ParamUi>> = {
   vwap: {
     hide: { label: 'Hide on 1D and above', toggle: true, hint: 'Draws nothing on daily bars and longer' },
     anchor: { label: 'Anchor', options: ['Session', 'Week', 'Month', 'Year', 'Quarter'], order: [0, 1, 2, 4, 3], hint: 'Where the average starts again. A session is a UTC day, and needs bars shorter than a day' },
-    source: { label: 'Price source', options: ['(H+L+C)/3', 'Open', 'High', 'Low', 'Close', '(H+L)/2', '(O+H+L+C)/4', '(H+L+C+C)/4'], order: [1, 2, 3, 4, 5, 0, 6, 7], hint: 'The price of each bar the average is taken of' },
+    source: { label: 'Average of', options: ['(H+L+C)/3', 'Open', 'High', 'Low', 'Close', '(H+L)/2', '(O+H+L+C)/4', '(H+L+C+C)/4', 'Volume'], order: [1, 2, 3, 4, 5, 0, 6, 7, 8], hint: 'What of each bar is averaged, weighted by its volume. Volume, being no price, draws in a pane of its own' },
     offset: { label: 'Offset', hint: 'Bars the lines are moved by: to the right above 0, to the left below' },
     mode: { label: 'Bands calculation', options: ['Standard deviation', 'Percentage'], hint: 'Bands at standard deviations of price around the VWAP, or at a percent of it' },
     band1: { label: 'Value area', band: 1, hint: 'The first band. At one standard deviation it holds about two thirds of the volume' },

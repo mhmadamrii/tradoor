@@ -1435,6 +1435,7 @@ impl Chart {
                 "macd" => Group::Macd,
                 "atr" => Group::Atr,
                 "delta" => Group::Delta,
+                "vol" => Group::Volume,
                 "oi" => Group::Oi,
                 fx => match tradoor_core::studies::FORMULA_PANES.iter().position(|p| *p == fx) {
                     Some(n) => Group::Formula(n as u8),
@@ -2629,7 +2630,7 @@ impl Chart {
                 Group::Pct | Group::Stoch => 2,
                 _ => ticks::step_decimals(&ticks).max(2),
             };
-            let label = |v: f64| if matches!(pane.group, Group::Oi | Group::Delta) { format_compact(v) } else { format_price(v, Some(decimals)) };
+            let label = |v: f64| if matches!(pane.group, Group::Oi | Group::Delta | Group::Volume) { format_compact(v) } else { format_price(v, Some(decimals)) };
             for v in ticks {
                 let y = pane.scale.y(v) as f32;
                 let near_badge = badges.iter().any(|b| b.pane == pi && (b.y - y).abs() < badge_h);
@@ -3105,7 +3106,7 @@ impl Chart {
     fn format_value(&self, group: Group, v: f64) -> String {
         match group {
             Group::Price => format_price(v, Some(self.precision())),
-            Group::Oi | Group::Delta => format_compact(v),
+            Group::Oi | Group::Delta | Group::Volume => format_compact(v),
             // A formula's own pane holds whatever it works out: decimals by its size, read with no logarithm.
             Group::Formula(_) => {
                 let a = v.abs();

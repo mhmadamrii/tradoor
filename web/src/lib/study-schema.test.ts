@@ -6,7 +6,7 @@ import { anotherId, CATEGORIES, currentDefault, defaultId, entries, instanceLabe
 const param = (name: string, value: number, min = 1, max = 1000, step = 1) => ({ name, default: value, min, max, step });
 const defs: StudyDefinition[] = [
   { kind: 'ema', short: 'EMA', group: 'price', params: [param('length', 50)] },
-  { kind: 'vwap', short: 'VWAP', group: 'price', params: [param('anchor', 0, 0, 4), param('band1', 1, 0, 10, 0.1), param('band2', 0, 0, 10, 0.1), param('band3', 0, 0, 10, 0.1), param('source', 0, 0, 7), param('offset', 0, -500, 500), param('mode', 0, 0, 1), param('hide', 0, 0, 1), param('timeframe', 0, 0, 12), param('wait', 1, 0, 1)] },
+  { kind: 'vwap', short: 'VWAP', group: 'price', params: [param('anchor', 0, 0, 4), param('band1', 1, 0, 10, 0.1), param('band2', 0, 0, 10, 0.1), param('band3', 0, 0, 10, 0.1), param('source', 0, 0, 8), param('offset', 0, -500, 500), param('mode', 0, 0, 1), param('hide', 0, 0, 1), param('timeframe', 0, 0, 12), param('wait', 1, 0, 1)] },
   { kind: 'avwap', short: 'Multi-VWAP', group: 'price', params: [] },
   { kind: 'rsi', short: 'RSI', group: 'pct', params: [param('length', 14)] },
   { kind: 'macd', short: 'MACD', group: 'macd', params: [param('fast', 12), param('slow', 26), param('signal', 9)] },
