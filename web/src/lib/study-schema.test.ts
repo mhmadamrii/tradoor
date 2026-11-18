@@ -1,12 +1,12 @@
 /// <reference lib="deno.ns" />
 import { assertEquals } from 'jsr:@std/assert@1';
 import type { StudyDefinition } from '../engine/protocol.ts';
-import { anotherId, CATEGORIES, defaultId, entries, instanceLabel, LAYER_DEFS, searchEntries, studyPlots, toHex } from './study-schema.ts';
+import { anotherId, CATEGORIES, currentDefault, defaultId, entries, instanceLabel, LAYER_DEFS, paramOrder, searchEntries, startingStyles, startingValues, studyId, studyPlots, toHex } from './study-schema.ts';
 
 const param = (name: string, value: number, min = 1, max = 1000, step = 1) => ({ name, default: value, min, max, step });
 const defs: StudyDefinition[] = [
   { kind: 'ema', short: 'EMA', group: 'price', params: [param('length', 50)] },
-  { kind: 'vwap', short: 'VWAP', group: 'price', params: [param('anchor', 0, 0, 3), param('band1', 1, 0, 10, 0.1), param('band2', 0, 0, 10, 0.1), param('band3', 0, 0, 10, 0.1)] },
+  { kind: 'vwap', short: 'VWAP', group: 'price', params: [param('anchor', 0, 0, 4), param('band1', 1, 0, 10, 0.1), param('band2', 0, 0, 10, 0.1), param('band3', 0, 0, 10, 0.1), param('source', 0, 0, 7), param('offset', 0, -500, 500), param('mode', 0, 0, 1), param('hide', 0, 0, 1), param('timeframe', 0, 0, 12), param('wait', 1, 0, 1)] },
   { kind: 'avwap', short: 'Multi-VWAP', group: 'price', params: [] },
   { kind: 'rsi', short: 'RSI', group: 'pct', params: [param('length', 14)] },
   { kind: 'macd', short: 'MACD', group: 'macd', params: [param('fast', 12), param('slow', 26), param('signal', 9)] },
@@ -39,6 +39,17 @@ Deno.test('a study’s first id is its defaults, and another takes a value not y
   assertEquals(anotherId(defs[1]!, ['vwap:0:1:0:0']), 'vwap:1:1:0:0', 'the next anchor');
   assertEquals(anotherId(defs[3]!, ['rsi:14']), 'rsi:28');
   assertEquals(anotherId(defs[2]!, ['avwap']), null, 'nothing to tell a second one apart by');
+});
+
+Deno.test('the inputs vwap gained are written only where set, as the engine writes its id', () => {
+  const vwap = defs[1]!;
+  assertEquals(studyId(vwap, [0, 1, 0, 0, 0, 0, 0, 0, 0, 1]), 'vwap:0:1:0:0', 'the id charts already hold');
+  assertEquals(studyId(vwap, [1, 1, 2, 0, 4, -3, 1, 0, 6, 1]), 'vwap:1:1:2:0:4:-3:1:0:6');
+  assertEquals(studyId(defs[4]!, [12, 26, 9]), 'macd:12:26:9', 'every other study writes them all');
+  assertEquals(anotherId(vwap, ['vwap:0:1:0:0'], [0, 1, 0, 0, 4, 0, 0, 0, 0, 1]), 'vwap:1:1:0:0:4', 'another from the inputs it starts with');
+  assertEquals(paramOrder('vwap', 10), [7, 0, 4, 5, 6, 1, 2, 3, 8, 9], 'hide on 1D first, then the anchor and source');
+  assertEquals(paramOrder('vwap', 4), [0, 1, 2, 3], 'an engine from before has the first four');
+  assertEquals(paramOrder('macd', 3), [0, 1, 2]);
 });
 
 Deno.test('what a new indicator paints besides lines has a row of its own', () => {
@@ -85,4 +96,23 @@ Deno.test('the style tab lists what a study draws, and what only carries values 
   assertEquals(studyPlots('keylevels', [{ id: 'keylevels:wo', label: 'WO', color: '#fffcbc', width: 0 }]).map((p) => [p.key, p.label, p.width]), [['wo', 'Weekly open', 1]], 'levels draw as segments');
   assertEquals(studyPlots('macd:12:26:9', [{ id: 'macd:12:26:9:histogram', label: 'Histogram', color: '#000', width: 1 }, { id: 'macd:12:26:9:macd', label: 'MACD', color: '#000', width: 1 }]).map((p) => p.key), ['histogram', 'histogramDown', 'macd']);
   assertEquals(studyPlots('rsi:14', [{ id: 'rsi:14:rsi', label: 'RSI 14', color: '#000', width: 1 }]).at(-1)?.owner, 'pct', 'the guides are the pane’s');
+});
+
+Deno.test('saved inputs are started with where the study still takes them', () => {
+  const def = { params: [param('length', 14), param('smooth', 3, 1, 10)] };
+  assertEquals(startingValues(def, null), [14, 3], 'none saved: its usual ones');
+  assertEquals(startingValues(def, { params: [21, 5], styles: {} }), [21, 5]);
+  assertEquals(startingValues(def, { params: [21, 50], styles: {} }), [21, 3], 'out of range now, as a script changed since might be');
+  assertEquals(startingValues({ params: [...def.params, param('signal', 9)] }, { params: [21], styles: {} }), [21, 3, 9], 'an input added since keeps its default');
+});
+
+Deno.test('a study saved as the default keeps its own styles by kind and the pane’s by owner', () => {
+  const styles = { 'rsi:21/rsi': '#ff0000,2,', 'pct/upper': '70', 'ema:50/ema': '#00ff00,,', 'rsi:14/rsi': '#0000ff,,' };
+  const saved = currentDefault('rsi', 'rsi:21', [21], styles, ['pct']);
+  assertEquals(saved, { params: [21], styles: { 'rsi/rsi': '#ff0000,2,', 'pct/upper': '70' } }, 'another study’s and another RSI’s are not this one’s');
+  // Added as rsi:21 to a chart whose pane has a lower guide of its own and an upper one: the saved upper does not move it.
+  const chart = { 'pct/upper': '75', 'ema:50/ema': '#00ff00,,' };
+  assertEquals(startingStyles(chart, 'rsi', 'rsi:21', saved), { 'pct/upper': '75', 'ema:50/ema': '#00ff00,,', 'rsi:21/rsi': '#ff0000,2,' });
+  assertEquals(startingStyles({}, 'rsi', 'rsi:21', saved), { 'pct/upper': '70', 'rsi:21/rsi': '#ff0000,2,' });
+  assertEquals(startingStyles(chart, 'rsi', 'rsi:21', null), chart);
 });

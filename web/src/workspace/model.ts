@@ -243,6 +243,8 @@ export interface WorkspaceDoc {
   sync: SyncState;
   /** Each chart's timeframe is its own, link or no link; stored documents from before read their group's once. */
   ownTimeframes: true;
+  /** By indicator kind, the inputs and styles one starts with when added; read through lib/study-defaults. */
+  studyDefaults: Record<string, unknown>;
 }
 
 export type DropZone = 'center' | 'left' | 'right' | 'top' | 'bottom';
@@ -354,6 +356,7 @@ export function defaultWorkspace(): WorkspaceDoc {
     timeframes: [...FAVORITE_TIMEFRAMES],
     sync: { symbol: false, interval: false, crosshair: false, time: false },
     ownTimeframes: true,
+    studyDefaults: {},
   };
 }
 
@@ -499,7 +502,7 @@ export function validate(raw: unknown): WorkspaceDoc | null {
   const timeframes = Array.isArray(raw.timeframes) ? TIMEFRAMES.map((t) => t.value).filter((tf) => (raw.timeframes as unknown[]).includes(tf)) : [...FAVORITE_TIMEFRAMES];
   const on = (key: keyof SyncState): boolean => isObj(raw.sync) && raw.sync[key] === true;
   const sync = { symbol: on('symbol'), interval: on('interval'), crosshair: on('crosshair'), time: on('time') };
-  return { v: 1, name: str(raw.name, '').slice(0, 120) || 'Default', savedAt: Number.isFinite(savedAt) ? savedAt : 0, root, panels, links, theme, timeframes, sync, ownTimeframes: true };
+  return { v: 1, name: str(raw.name, '').slice(0, 120) || 'Default', savedAt: Number.isFinite(savedAt) ? savedAt : 0, root, panels, links, theme, timeframes, sync, ownTimeframes: true, studyDefaults: isObj(raw.studyDefaults) ? raw.studyDefaults : {} };
 }
 
 // ---------------------------------------------------------------- the tree

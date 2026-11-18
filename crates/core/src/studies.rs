@@ -129,6 +129,8 @@ const fn x(name: &'static str, default: f64, min: f64) -> StudyParam {
 
 /// What `vwap`'s first parameter starts it from.
 const VWAP_ANCHORS: [&str; 5] = ["Session", "Week", "Month", "Year", "Quarter"];
+/// The bars `vwap`'s `timeframe` works it out on, folded from the chart's: the first is the chart's own.
+const VWAP_TIMEFRAMES: [(i64, &str); 13] = [(0, ""), (MINUTE, "1m"), (3 * MINUTE, "3m"), (5 * MINUTE, "5m"), (15 * MINUTE, "15m"), (30 * MINUTE, "30m"), (HOUR, "1h"), (2 * HOUR, "2h"), (4 * HOUR, "4h"), (6 * HOUR, "6h"), (12 * HOUR, "12h"), (DAY, "1D"), (7 * DAY, "1W")];
 /// The last period's levels, as the chart labels them: `pMVAH` is last month's.
 const VWAP_PREVIOUS: [[&str; 3]; 5] = [["pDVAH", "pDVWAP", "pDVAL"], ["pWVAH", "pWVWAP", "pWVAL"], ["pMVAH", "pMVWAP", "pMVAL"], ["pYVAH", "pYVWAP", "pYVAL"], ["pQVAH", "pQVWAP", "pQVAL"]];
 
@@ -158,8 +160,15 @@ pub static STUDIES: [StudyDefinition; 20] = [
     StudyDefinition { kind: StudyKind::StochRsi, short: "Stoch RSI", group: Group::Pct, params: &[p("rsi", 14, 2, 1000), p("stoch", 14, 2, 1000), p("k", 3, 1, 100), p("d", 3, 1, 100)] },
     StudyDefinition { kind: StudyKind::Macd, short: "MACD", group: Group::Macd, params: &[p("fast", 12, 1, 1000), p("slow", 26, 2, 1000), p("signal", 9, 1, 1000)] },
     StudyDefinition { kind: StudyKind::KeyLevels, short: "Key Levels", group: Group::Price, params: &[] },
-    // A band of 0 is not drawn.
-    StudyDefinition { kind: StudyKind::Vwap, short: "VWAP", group: Group::Price, params: &[p("anchor", 0, 0, 4), x("band1", 1.0, 0.0), x("band2", 0.0, 0.0), x("band3", 0.0, 0.0)] },
+    // A band of 0 is not drawn. `source` 0 is (H+L+C)/3 (`source_price`); `offset` moves the lines by bars;
+    // `mode` 1 makes the bands percent of the VWAP; `hide` 1 draws nothing on daily bars and longer;
+    // `timeframe` is a place in VWAP_TIMEFRAMES; `wait` 1 moves only as a bar of it closes.
+    StudyDefinition {
+        kind: StudyKind::Vwap,
+        short: "VWAP",
+        group: Group::Price,
+        params: &[p("anchor", 0, 0, 4), x("band1", 1.0, 0.0), x("band2", 0.0, 0.0), x("band3", 0.0, 0.0), p("source", 0, 0, 7), StudyParam { name: "offset", default: 0.0, min: -500.0, max: 500.0, step: 1.0 }, p("mode", 0, 0, 1), p("hide", 0, 0, 1), p("timeframe", 0, 0, 12), p("wait", 1, 0, 1)],
+    },
     // `periods` a bit each for the day, week, month, quarter and year; `previous` 1 labels the last of each too.
     StudyDefinition { kind: StudyKind::VwapLevels, short: "VWAP Levels", group: Group::Price, params: &[p("periods", 30, 1, 31), p("previous", 1, 0, 1), x("band", 1.0, 0.1)] },
     StudyDefinition { kind: StudyKind::Avwap, short: "Multi-VWAP", group: Group::Price, params: &[] },
@@ -206,8 +215,16 @@ impl StudySpec {
 
     /// `ema:50` — the id AND the wire format: what localStorage holds and what a
     /// legend row is keyed by, so a study cannot be added twice under two names.
+    /// The inputs VWAP gained after its first four are written only where set, so
+    /// the ids charts already hold still name it (`studyId` in web/src/lib/study-schema).
     pub fn id(&self) -> String {
-        std::iter::once(self.kind.as_str().to_string()).chain(self.params.iter().map(|v| plain(*v))).collect::<Vec<_>>().join(":")
+        let defaults = self.def().params;
+        let mut n = self.params.len();
+        let kept = if self.kind == StudyKind::Vwap { 4 } else { n };
+        while n > kept && defaults.get(n - 1).is_some_and(|d| d.default == self.params[n - 1]) {
+            n -= 1;
+        }
+        std::iter::once(self.kind.as_str().to_string()).chain(self.params[..n].iter().map(|v| plain(*v))).collect::<Vec<_>>().join(":")
     }
 
     /// `EMA 50`, `Stoch RSI 14 14 3 3`.
@@ -227,10 +244,19 @@ impl StudySpec {
             return format!("{short} {}", self.param(0));
         }
         if self.kind == StudyKind::Vwap {
-            let mut label = format!("{short} {}", VWAP_ANCHORS[self.param(0).min(4)]);
+            let mut label = format!("{short} ");
+            let timeframe = VWAP_TIMEFRAMES[self.param(8).min(12)].1;
+            if !timeframe.is_empty() {
+                label += timeframe;
+                label += " ";
+            }
+            label += VWAP_ANCHORS[self.param(0).min(4)];
             for band in (1..4).map(|i| self.number(i)).filter(|b| *b > 0.0) {
                 label += " ±";
                 label += &plain(band);
+                if self.param(6) == 1 {
+                    label += "%";
+                }
             }
             return label;
         }
@@ -293,8 +319,9 @@ pub enum LineStyle {
     Solid,
     /// Holds each value flat until the next — what an opening price does.
     Step,
-    /// Starts again each time this anchor turns over, with no line across the turn.
-    Anchored(usize),
+    /// Starts again each time this anchor turns over, with no line across the turn;
+    /// its values moved this many bars to the right (left where below 0).
+    Anchored(usize, isize),
     /// Its last value alone: a short stub and its label, right of the newest bar.
     Tag,
     /// Not stroked: the series only carries values for the legend and the axis.
@@ -577,7 +604,7 @@ pub fn compute_study_with(spec: &StudySpec, candles: &[Candle], inputs: &StudyIn
         StudyKind::KeyLevels => (study.lines, study.segments) = key_levels(candles, inputs.days),
         StudyKind::Avwap => study.lines = anchored_vwap(candles),
         StudyKind::VwapLevels => (study.lines, study.stats) = vwap_levels(inputs, param(0), param(1) == 1, spec.number(2)),
-        StudyKind::Vwap => (study.lines, study.fills, study.stats) = vwap(candles, param(0).min(4), [spec.number(1), spec.number(2), spec.number(3)]),
+        StudyKind::Vwap => (study.lines, study.fills, study.stats) = vwap(candles, spec),
         StudyKind::SwingMap => (study.lines, study.markers, study.stats) = swing_map(candles, param(0), param(1)),
         StudyKind::OpenInterest => {
             let usd = param(1) == 1;
@@ -612,7 +639,7 @@ fn mixed(a: &Series, b: &Series, of_a: f64, of_b: f64) -> Series {
     a.iter().zip(b).map(|(x, y)| Some(of_a * (*x)? + of_b * (*y)?)).collect()
 }
 
-/// The cloud as TradingView draws it: conversion and base lines at the bar, the
+/// The cloud as it is usually drawn: conversion and base lines at the bar, the
 /// two leading spans ahead of it and price behind it by `shift` less one, so the
 /// lines run past the last bar.
 fn ichimoku(candles: &[Candle], close: &Series, lengths: [usize; 3], shift: usize) -> (Vec<StudyLine>, Vec<StudyFill>) {
@@ -933,28 +960,95 @@ pub fn anchor_period(t: i64, anchor: usize) -> i64 {
     }
 }
 
+/// A bar's price as a VWAP's `source` reads it, from `[open, high, low, close]`:
+/// (H+L+C)/3 first, as the usual VWAP, then the open, high, low and close,
+/// (H+L)/2, (O+H+L+C)/4 and (H+L+C+C)/4.
+fn source_price(source: usize, [o, h, l, c]: [f64; 4]) -> f64 {
+    match source {
+        1 => o,
+        2 => h,
+        3 => l,
+        4 => c,
+        5 => (h + l) / 2.0,
+        6 => (o + h + l + c) / 4.0,
+        7 => (h + l + c + c) / 4.0,
+        _ => (h + l + c) / 3.0,
+    }
+}
+
 /// VWAP of hlc3 since `anchor` last turned over, and the volume-weighted
 /// deviation of price around it. A period with no volume has neither: never the
 /// last price.
 fn anchored(candles: &[Candle], anchor: usize) -> (Series, Series) {
-    let mut turn = None;
+    anchored_on(candles, anchor, 0, 0, false)
+}
+
+/// The same of `source`, worked out on bars `unit` long folded from these (each
+/// bar its own at 0). One of those still forming counts as it stands at each
+/// bar in it; `wait` keeps to the figures of the last one closed instead, and
+/// to none in a period until its first has.
+fn anchored_on(candles: &[Candle], anchor: usize, source: usize, unit: i64, wait: bool) -> (Series, Series) {
+    let bucket = |t: i64| match unit {
+        0 => t,
+        u if u == 7 * DAY => week_index(t),
+        u => t.div_euclid(u),
+    };
+    let bar = bar_length(candles).unwrap_or(0);
+    let (mut turn, mut at) = (None, None);
     let (mut volume, mut sum, mut squares) = (0.0f64, 0.0f64, 0.0f64);
-    candles
-        .iter()
-        .map(|c| {
-            let now = anchor_period(c.open_time, anchor);
-            if turn != Some(now) {
-                turn = Some(now);
-                (volume, sum, squares) = (0.0, 0.0, 0.0);
+    // The longer bar forming: open, high, low, close and volume.
+    let mut part = [0.0f64; 5];
+    let mut closed = (None, None);
+    let mut out = (Vec::with_capacity(candles.len()), Vec::with_capacity(candles.len()));
+    for (i, c) in candles.iter().enumerate() {
+        let now = anchor_period(c.open_time, anchor);
+        if turn != Some(now) {
+            turn = Some(now);
+            (volume, sum, squares, at, closed) = (0.0, 0.0, 0.0, None, (None, None));
+        }
+        let b = bucket(c.open_time);
+        if at == Some(b) {
+            part = [part[0], part[1].max(c.high), part[2].min(c.low), c.close, part[4] + c.volume];
+        } else {
+            if at.is_some() {
+                let x = source_price(source, [part[0], part[1], part[2], part[3]]);
+                volume += part[4];
+                sum += x * part[4];
+                squares += x * x * part[4];
             }
-            let typical = (c.high + c.low + c.close) / 3.0;
-            volume += c.volume;
-            sum += typical * c.volume;
-            squares += typical * typical * c.volume;
-            let vwap = sum / volume;
-            if volume > 0.0 { (Some(vwap), Some((squares / volume - vwap * vwap).max(0.0).sqrt())) } else { (None, None) }
-        })
-        .unzip()
+            at = Some(b);
+            part = [c.open, c.high, c.low, c.close, c.volume];
+        }
+        let x = source_price(source, [part[0], part[1], part[2], part[3]]);
+        let v = volume + part[4];
+        let figures = if v > 0.0 {
+            let vwap = (sum + x * part[4]) / v;
+            (Some(vwap), Some(((squares + x * x * part[4]) / v - vwap * vwap).max(0.0).sqrt()))
+        } else {
+            (None, None)
+        };
+        if bucket(candles.get(i + 1).map_or(c.open_time + bar, |n| n.open_time)) != b {
+            closed = figures;
+        }
+        let (m, d) = if wait { closed } else { figures };
+        out.0.push(m);
+        out.1.push(d);
+    }
+    out
+}
+
+/// Moved `by` bars: to the right, past the newest bar, where above 0; to the left where below.
+fn moved(values: Series, by: isize) -> Series {
+    let (n, len) = (by.unsigned_abs(), values.len());
+    if by >= 0 {
+        let mut out = vec![None; if len == 0 { 0 } else { n }];
+        out.extend(values);
+        out
+    } else {
+        let mut out: Series = values.into_iter().skip(n).collect();
+        out.resize(len, None);
+        out
+    }
 }
 
 /// VWAP since the session, week, month and year opened ("Boyen_Multiple Anchor
@@ -970,27 +1064,36 @@ fn anchored_vwap(candles: &[Candle]) -> Vec<StudyLine> {
     vec![session, colored("weekly", "Weekly", 1, "#ffa726", 2.0), colored("monthly", "Monthly", 2, "#e040fb", 2.0), colored("yearly", "Yearly", 3, "#e8e8e8", 2.0)]
 }
 
-/// The standard VWAP, as TradingView's: dotted, with bands at standard deviations
-/// of price around it, shaded, the first of them read as the value area (about
-/// two thirds of the volume). Each period's last VWAP, VAH and VAL are carried
-/// into the next and labelled at the right. Sessions are UTC days, as the
-/// exchanges' daily bars are.
+/// The standard VWAP: dotted, with bands at standard deviations of price around
+/// it (or at percents of it), shaded, the first of them read as the value area
+/// (about two thirds of the volume). Each period's last VWAP, VAH and VAL are
+/// carried into the next and labelled at the right. Sessions are UTC days, as
+/// the exchanges' daily bars are.
 ///
 /// It draws nothing where it could not be right, and says why: an anchor no longer
 /// than a bar starts again on every bar, a market with no volume has no VWAP, and
 /// a period whose start the chart does not hold is an average of its later bars.
-fn vwap(candles: &[Candle], anchor: usize, bands: [f64; 3]) -> (Vec<StudyLine>, Vec<StudyFill>, Vec<(&'static str, String)>) {
+/// Nor where asked not to, on daily bars and longer.
+fn vwap(candles: &[Candle], spec: &StudySpec) -> (Vec<StudyLine>, Vec<StudyFill>, Vec<(&'static str, String)>) {
+    let anchor = spec.param(0).min(4);
+    let bands = [spec.number(1), spec.number(2), spec.number(3)];
+    let (shift, percent) = (spec.number(5) as isize, spec.param(6) == 1);
     let bar = bar_length(candles).unwrap_or(0);
-    let fits = bar < [DAY, 7 * DAY, 28 * DAY, 365 * DAY, 89 * DAY][anchor];
-    let (mut mid, deviation) = anchored(candles, anchor);
-    if !fits {
+    // A timeframe no longer than the chart's bar is the chart's own.
+    let unit = Some(VWAP_TIMEFRAMES[spec.param(8).min(12)].0).filter(|u| *u > bar).unwrap_or(0);
+    let fits = bar.max(unit) < [DAY, 7 * DAY, 28 * DAY, 365 * DAY, 89 * DAY][anchor];
+    let hidden = spec.param(7) == 1 && bar >= DAY;
+    let (mut mid, deviation) = anchored_on(candles, anchor, spec.param(4), unit, spec.param(9) == 1);
+    if !fits || hidden {
         mid.fill(None);
     } else if let Some(first) = candles.first().filter(|c| anchor_period(c.open_time - bar, anchor) == anchor_period(c.open_time, anchor)) {
         let partial = anchor_period(first.open_time, anchor);
         let held = candles.iter().take_while(|c| anchor_period(c.open_time, anchor) == partial).count();
         mid[..held].fill(None);
     }
-    let stats = if !fits {
+    let stats = if hidden {
+        Vec::new()
+    } else if !fits {
         vec![("Anchor", "needs shorter bars".to_string())]
     } else if !candles.is_empty() && mid.iter().all(Option::is_none) {
         if candles.iter().any(|c| c.volume > 0.0) {
@@ -1002,14 +1105,17 @@ fn vwap(candles: &[Candle], anchor: usize, bands: [f64; 3]) -> (Vec<StudyLine>, 
         Vec::new()
     };
 
-    let mut lines = vec![StudyLine { style: LineStyle::Anchored(anchor), pattern: Pattern::Dotted, color: Some("#2962ff"), width: 1.5, ..StudyLine::line("vwap", "VWAP", mid.clone()) }];
+    // A band `k` out: deviations, or percents of the VWAP.
+    let band = |m: f64, d: f64, k: f64| if percent { m * (1.0 + k / 100.0) } else { m + k * d };
+    let style = LineStyle::Anchored(anchor, shift);
+    let mut lines = vec![StudyLine { style, pattern: Pattern::Dotted, color: Some("#2962ff"), width: 1.5, ..StudyLine::line("vwap", "VWAP", moved(mid.clone(), shift)) }];
     let mut fills = Vec::new();
     let edges = [("upper1", "lower1", "fill1", "#6b7fb8", "#2962ff12"), ("upper2", "lower2", "fill2", "#5a6da3", "#2962ff0c"), ("upper3", "lower3", "fill3", "#4a5c8f", "#2962ff08")];
     for (multiple, (upper, lower, fill, color, shade)) in bands.into_iter().zip(edges) {
         if multiple > 0.0 {
             for (key, k) in [(upper, multiple), (lower, -multiple)] {
-                let values = mid.iter().zip(&deviation).map(|(m, d)| Some((*m)? + k * (*d)?)).collect();
-                lines.push(StudyLine { style: LineStyle::Anchored(anchor), color: Some(color), badge: false, ..StudyLine::line(key, key, values) });
+                let values = mid.iter().zip(&deviation).map(|(m, d)| Some(band((*m)?, (*d)?, k))).collect();
+                lines.push(StudyLine { style, color: Some(color), badge: false, ..StudyLine::line(key, key, moved(values, shift)) });
             }
             fills.push(StudyFill::between(upper, lower, fill, shade));
         }
@@ -1025,7 +1131,7 @@ fn vwap(candles: &[Candle], anchor: usize, bands: [f64; 3]) -> (Vec<StudyLine>, 
         held.push(before);
     }
     let [high, middle, low] = VWAP_PREVIOUS[anchor];
-    let tag = |key, label, k: f64, color| StudyLine { style: LineStyle::Tag, color: Some(color), badge: false, ..StudyLine::line(key, label, held.iter().map(|h| h.map(|(m, d)| m + k * d)).collect()) };
+    let tag = |key, label, k: f64, color| StudyLine { style: LineStyle::Tag, color: Some(color), badge: false, ..StudyLine::line(key, label, held.iter().map(|h| h.map(|(m, d)| band(m, d, k))).collect()) };
     if bands[0] > 0.0 {
         lines.push(tag("prevVah", high, bands[0], "#6b7fb8"));
     }
@@ -1381,10 +1487,71 @@ mod tests {
         let session = compute_study(&parse_studies("vwap", 12)[0], &candles);
         assert_eq!(session.id, "vwap:0:1:0:0", "the one band on by default");
         assert_eq!(line(&session, "vwap"), &vec![Some(100.0), Some(150.0), Some(300.0), Some(400.0)]);
-        assert!(matches!(session.lines[0].style, LineStyle::Anchored(0)));
+        assert!(matches!(session.lines[0].style, LineStyle::Anchored(0, 0)));
         let week = compute_study(&parse_studies("vwap:1:1:0:0", 12)[0], &candles);
         assert_eq!(week.label, "VWAP Week ±1");
         assert_eq!(line(&week, "vwap"), &vec![Some(100.0), Some(150.0), Some(200.0), Some(275.0)], "the same week throughout");
+    }
+
+    #[test]
+    fn vwap_inputs_past_its_bands_are_written_only_where_set() {
+        assert_eq!(parse_studies("vwap:0:1:0:0", 12)[0].id(), "vwap:0:1:0:0", "a chart's id from before stays as it was");
+        assert_eq!(parse_studies("vwap:0:1:0:0:0:0:0:0:0:1", 12)[0].id(), "vwap:0:1:0:0");
+        let spec = &parse_studies("vwap:1:1:2:0:4:-3:1:0:6", 12)[0];
+        assert_eq!(spec.id(), "vwap:1:1:2:0:4:-3:1:0:6");
+        assert_eq!(spec.label(), "VWAP 1h Week ±1% ±2%");
+    }
+
+    #[test]
+    fn vwap_reads_its_source_and_bands_in_percent() {
+        // Hourly bars with a high 10 over the close and a low 10 under it.
+        let mut candles = hourly("2026-08-03", &[(110.0, 90.0, 100.0, 1.0), (210.0, 190.0, 200.0, 1.0)]);
+        candles[1].open = 150.0;
+        let high = compute_study(&parse_studies("vwap:0:1:0:0:2", 12)[0], &candles);
+        assert_eq!(line(&high, "vwap"), &vec![Some(110.0), Some(160.0)]);
+        let ohlc = compute_study(&parse_studies("vwap:0:1:0:0:6", 12)[0], &candles);
+        assert_eq!(line(&ohlc, "vwap"), &vec![Some(100.0), Some(143.75)], "(150 + 210 + 190 + 200) / 4 is 187.5");
+        let percent = compute_study(&parse_studies("vwap:0:2:0:0:4:0:1", 12)[0], &candles);
+        let near = |got: &Series, want: [f64; 2]| got.iter().zip(want).all(|(g, w)| (g.unwrap() - w).abs() < 1e-9);
+        assert!(near(line(&percent, "upper1"), [102.0, 153.0]), "2% over the VWAP of the closes");
+        assert!(near(line(&percent, "lower1"), [98.0, 147.0]));
+    }
+
+    #[test]
+    fn vwap_moves_by_its_offset_and_hides_on_daily_bars_when_asked() {
+        let candles = at_midnight("2026-08-03", &[100.0, 200.0, 300.0, 500.0]);
+        let right = compute_study(&parse_studies("vwap:0:1:0:0:0:2", 12)[0], &candles);
+        assert_eq!(line(&right, "vwap"), &vec![None, None, Some(100.0), Some(150.0), Some(300.0), Some(400.0)], "two bars on, past the newest");
+        assert!(matches!(right.lines[0].style, LineStyle::Anchored(0, 2)));
+        let left = compute_study(&parse_studies("vwap:1:1:0:0:0:-1", 12)[0], &candles);
+        assert_eq!(line(&left, "vwap"), &vec![Some(150.0), Some(200.0), Some(275.0), None]);
+        let daily: Vec<Candle> = (0..4).map(|i| Candle { open_time: parse_iso("2026-08-03").unwrap() + i * DAY, ..candles[0].clone() }).collect();
+        let shown = compute_study(&parse_studies("vwap:1", 12)[0], &daily);
+        assert!(line(&shown, "vwap").iter().all(Option::is_some));
+        let hidden = compute_study(&parse_studies("vwap:1:1:0:0:0:0:0:1", 12)[0], &daily);
+        assert!(hidden.lines.iter().all(|l| l.values.iter().all(Option::is_none)) && hidden.stats.is_empty());
+        assert_eq!(line(&compute_study(&parse_studies("vwap:0:1:0:0:0:0:0:1", 12)[0], &candles), "vwap")[0], Some(100.0), "shorter bars are drawn");
+    }
+
+    #[test]
+    fn vwap_on_a_longer_timeframe_counts_its_bars_as_they_close_or_as_they_stand() {
+        // Four hourly bars from midnight, closing at 100, 200, 300 and 400, worked out on 2-hour bars.
+        let candles = hourly("2026-08-03", &[(100.0, 100.0, 100.0, 1.0), (200.0, 200.0, 200.0, 1.0), (300.0, 300.0, 300.0, 1.0), (400.0, 400.0, 400.0, 1.0)]);
+        // Each 2-hour bar is a high of the later, a low of the earlier and the later's close: (200 + 100 + 200) / 3 = 166.67 on two lots.
+        let standing = compute_study(&parse_studies("vwap:0:1:0:0:0:0:0:0:7:0", 12)[0], &candles);
+        let v = line(&standing, "vwap");
+        assert_eq!(v[0], Some(100.0), "the first 2-hour bar as it stands after one hour");
+        assert!((v[1].unwrap() - 500.0 / 3.0).abs() < 1e-9);
+        // Then 166.67 on two lots and (400 + 300 + 400) / 3 = 366.67 on two.
+        assert!((v[3].unwrap() - 800.0 / 3.0).abs() < 1e-9);
+        let waiting = compute_study(&parse_studies("vwap:0:1:0:0:0:0:0:0:7", 12)[0], &candles);
+        let w = line(&waiting, "vwap");
+        assert_eq!(w[0], None, "nothing until the first 2-hour bar closes");
+        assert_eq!((w[1], w[2]), (v[1], v[1]), "held through the next one forming");
+        assert_eq!(w[3], v[3]);
+        // A timeframe no longer than the chart's bar is the chart's own.
+        let own = compute_study(&parse_studies("vwap:0:1:0:0:0:0:0:0:1", 12)[0], &candles);
+        assert_eq!(line(&own, "vwap"), line(&compute_study(&parse_studies("vwap", 12)[0], &candles), "vwap"));
     }
 
     #[test]
@@ -1524,7 +1691,7 @@ mod tests {
         // The mid of the last nine highs and lows.
         assert_eq!(conversion[119], Some(((110.0 + 119.0) + (90.0 + 111.0)) / 2.0));
         assert_eq!(base[119], Some(((110.0 + 119.0) + (90.0 + 94.0)) / 2.0));
-        // Displacement 26 moves it 25 bars, as TradingView's offset does.
+        // Displacement 26 moves it 25 bars, as the usual displacement does.
         assert_eq!(a.len(), 145, "past the last bar");
         assert_eq!(a[144], Some((conversion[119].unwrap() + base[119].unwrap()) / 2.0));
         assert_eq!(b[144], Some(((110.0 + 119.0) + (90.0 + 68.0)) / 2.0));

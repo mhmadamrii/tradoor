@@ -1,19 +1,21 @@
 /**
- * One indicator's settings, in the tabs TradingView puts them under, beside the
+ * One indicator's settings, under Inputs, Style and Source tabs, beside the
  * chart rather than over it: every change shows at once. Ok keeps them, Cancel
- * puts the chart back as it was, Defaults starts over. A study's identity is its
+ * puts the chart back as it was; Defaults starts over, or saves what is set as
+ * what the indicator starts with when added. A study's identity is its
  * parameters, so a new length swaps it for the study of that length, its style
  * and its place in the legend kept.
  */
-import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js';
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { studyCatalog } from '../engine/client';
 import type { StudyMeta, StudyParam } from '../engine/protocol';
-import { entries, LAYER_DEFS, NOTES, otherOwners, paramUi, studyNumbers, studyPlots, toHex, type NumberInput, type ParamUi, type StylePlot } from '../lib/study-schema';
+import { currentDefault, entries, LAYER_DEFS, NOTES, otherOwners, paramOrder, paramUi, savedDefault, startingStyles, startingValues, studyId, studyNumbers, studyPlots, toHex, withDefault, type NumberInput, type ParamUi, type StudyDefault, type StylePlot } from '../lib/study-schema';
+import { toast } from '../lib/toasts';
 import { dropOwner, numberOf, plotStyle, replaceStudy, splitList, withNumber, withPlot } from '../lib/study-style';
 import { CHART_THEME } from '../lib/theme';
 import type { ChartPanelState } from '../workspace/model';
-import { doc, patchPanel } from '../workspace/store';
+import { doc, patchPanel, update } from '../workspace/store';
 import { formulaDefinition, formulaLabels, formulaOf, isFormulaKind, setEditing } from '../lib/formulas';
 import { SOURCES, UNWRITTEN } from '../lib/formula-sources';
 import { ColorField } from './ColorField';
@@ -63,7 +65,7 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
     }
     const next = values();
     next[i] = param.step >= 1 ? Math.round(value) : Math.round(value * 100) / 100;
-    const id = [kind, ...next].join(':');
+    const id = studyId({ kind, params: def()?.params ?? [] }, next);
     if (id === current()) {
       setProblem(null);
     } else if (splitList(props.panel.studies).includes(id)) {
@@ -75,21 +77,43 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
     }
   };
 
-  /** Whole: where a new length lands, or a layer's own numbers and styles forgotten. */
-  const defaults = () => {
+  /** What was saved as its default; a layer, on every chart already, has none. */
+  const saved = () => (layer ? null : savedDefault(doc.studyDefaults, kind));
+  const saveDefault = (next: StudyDefault | null) => update((d) => void (d.studyDefaults = withDefault(d.studyDefaults, kind, next)));
+  const [menu, setMenu] = createSignal(false);
+  /** Whole: to what was saved as its default, or tradoor's own where none was or `own` says so; a layer's own numbers and styles forgotten. */
+  const reset = (own: boolean) => {
+    setMenu(false);
     setProblem(null);
-    const params = def()?.params ?? [];
-    const id = params.length > 0 ? [kind, ...params.map((p) => p.default)].join(':') : current();
+    const d = def();
+    const start = own ? null : saved();
+    const id = d && d.params.length > 0 ? studyId(d, startingValues(d, start)) : current();
     const taken = id !== current() && splitList(props.panel.studies).includes(id);
     let next = dropOwner(props.panel.studyStyles, current());
     for (const other of otherOwners(kind)) next = dropOwner(next, other);
     if (taken) setProblem('The same one with its usual inputs is already on this chart, so the inputs stay.');
-    if (id !== current() && !taken) {
+    const at = id !== current() && !taken ? id : current();
+    if (start) next = startingStyles(next, kind, at, start);
+    if (at !== current()) {
       patch({ ...replaceStudy(props.panel, current(), id), studyStyles: next });
       setCurrent(id);
     } else {
       patch({ studyStyles: next });
     }
+  };
+  /** What is set now, as what it starts with when added to a chart; tradoor's own again is nothing to keep. */
+  const saveAsDefault = () => {
+    setMenu(false);
+    const now = values();
+    const mine = currentDefault(kind, current(), now, props.panel.studyStyles, otherOwners(kind));
+    const usual = (def()?.params ?? []).every((p, i) => now[i] === p.default) && Object.keys(mine.styles).length === 0;
+    saveDefault(usual ? null : mine);
+    toast({ tone: 'info', title: tlf('Saved as the default for {0}', about()?.name ?? kind), body: 'Added to a chart from now on, it starts with these inputs and styles' });
+  };
+  /** tradoor's own inputs and styles, and the saved default forgotten. */
+  const forget = () => {
+    saveDefault(null);
+    reset(true);
   };
   /** This one back as it was: the legend stays in use meanwhile, and what was done there stands. */
   const cancel = () => {
@@ -145,7 +169,10 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
     // The dialog keeps the keyboard: a letter typed here must not open the symbol search.
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation();
-      if (e.key === 'Escape') cancel();
+      if (e.key === 'Escape') {
+        if (menu()) setMenu(false);
+        else cancel();
+      }
       else if (e.key === 'Enter' && e.target instanceof HTMLInputElement) props.onClose();
     };
     box.addEventListener('keydown', onKey);
@@ -171,12 +198,12 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
     const set = (v: number) => setValue(p.index, p.param, ui, v);
     // A Frost Script's setting of its own kind: a tick, a colour, one of a list, a moment.
     const row = (control: JSX.Element) => (
-      <div class="drow">
+      <div class="drow" data-tip={tl(ui.hint)}>
         <span class="dlabel">{tl(ui.label)}</span>
         <div class="dctl">{control}</div>
       </div>
     );
-    if (p.param.kind === 'bool') return row(<input type="checkbox" aria-label={tl(ui.label)} checked={value() !== 0} onChange={(e) => set(e.currentTarget.checked ? 1 : 0)} />);
+    if (p.param.kind === 'bool' || ui.toggle) return row(<input type="checkbox" aria-label={tl(ui.label)} checked={value() !== 0} onChange={(e) => set(e.currentTarget.checked ? 1 : 0)} />);
     if (p.param.kind === 'colour') {
       // The colour's own opacity kept: the picker gives red, green and blue alone.
       const hex = () => `#${(Math.floor(value() / 256) >>> 0).toString(16).padStart(6, '0')}`;
@@ -260,7 +287,7 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
                 <For each={ui.order ?? options().map((_, i) => i)}>
                   {(i) => (
                     <option value={i} selected={value() === i}>
-                      {options()[i]}
+                      {tl(options()[i]!)}
                     </option>
                   )}
                 </For>
@@ -357,7 +384,10 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
         class="dsettings study-settings"
         tabIndex={-1}
         style={{ left: `${at().left}px`, top: `${at().top}px`, 'max-height': `calc(100dvh - ${at().top + 8}px)` }}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          if (!(e.target as Element).closest('.dmenu-at')) setMenu(false);
+        }}
         onWheel={(e) => e.stopPropagation()}
       >
         <header onPointerDown={startDrag}>
@@ -410,7 +440,7 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
               </>
             }
           >
-            <Index each={def()?.params ?? []}>{(param, i) => <Param param={param()} index={i} />}</Index>
+            <For each={paramOrder(kind, def()?.params.length ?? 0)}>{(i) => <Param param={def()!.params[i]!} index={i} />}</For>
             <For each={numbers()}>{(input) => <Num input={input} />}</For>
             <p class="dnote">{NOTES[kind] ?? about()?.about}</p>
           </Show>
@@ -420,9 +450,28 @@ export function StudySettings(props: { panel: ChartPanelState; target: string; m
           </Show>
         </div>
         <footer>
-          <button class="dbtn" data-tip="Its usual inputs and colours" onClick={defaults}>
-            {tl('Defaults')}
-          </button>
+          <div class="dmenu-at">
+            <button class="dbtn" aria-haspopup="menu" aria-expanded={menu()} onClick={() => setMenu(!menu())}>
+              {tl('Defaults')} ▾
+            </button>
+            <Show when={menu()}>
+              <div class="menu dmenu" role="menu">
+                <button role="menuitem" data-tip={saved() ? 'Back to the inputs and styles saved as its default' : 'Its usual inputs and colours'} onClick={() => reset(false)}>
+                  {tl('Reset settings')}
+                </button>
+                <Show when={!layer}>
+                  <button role="menuitem" data-tip="Added to a chart from now on, it starts with these inputs and styles" onClick={saveAsDefault}>
+                    {tl('Save as default')}
+                  </button>
+                </Show>
+                <Show when={saved()}>
+                  <button role="menuitem" data-tip="Forgets the saved default: its usual inputs and colours again" onClick={forget}>
+                    {tl('Back to tradoor’s defaults')}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+          </div>
           <span class="spacer" />
           <button class="dbtn" onClick={cancel}>
             {tl('Cancel')}

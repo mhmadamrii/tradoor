@@ -1713,3 +1713,7 @@ textarea.jr-in { resize: vertical; line-height: 1.5; }
 .announce.warn { border-bottom-color: color-mix(in oklab, var(--warn) 45%, var(--border)); background: color-mix(in oklab, var(--warn) 9%, var(--surface)); }
 .announce.warn .announce-mark, .announce.warn a { color: var(--warn); }
 @media (max-width: 700px) { .announce { font-size: .6875rem; } .announce-body { flex-basis: 100%; order: 3; } }
+/* An indicator's Defaults: a menu above its button. */
+.dmenu-at { position: relative; }
+.dmenu { bottom: calc(100% + 4px); left: 0; }
+.dmenu button { padding: 6px 10px; font-size: .75rem; }

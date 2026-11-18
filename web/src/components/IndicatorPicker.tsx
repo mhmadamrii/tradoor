@@ -12,15 +12,15 @@ import { setOverlay, setStudyEditing } from '../app/ui';
 import { studyCatalog } from '../engine/client';
 import { api, errorText } from '../lib/api';
 import { favourites, loadFavourites, toggleFavourite } from '../lib/favourites';
-import { community, communityError, formulas, isFormulaKind, kindOf, loadCommunity, setEditing } from '../lib/formulas';
+import { community, communityError, formulaDefinition, formulas, isFormulaKind, kindOf, loadCommunity, setEditing } from '../lib/formulas';
 import { Icon } from '../lib/icons';
 import { session } from '../lib/owner';
 import { readPref, writePref } from '../lib/prefs';
-import { anotherId, CATEGORIES, defaultId, entries, instanceLabel, searchEntries, type Entry } from '../lib/study-schema';
-import { splitList, withLayer } from '../lib/study-style';
+import { anotherId, CATEGORIES, entries, instanceLabel, savedDefault, searchEntries, startingStyles, startingValues, studyId, type Entry } from '../lib/study-schema';
+import { splitList, withLayer, type StudyStyles } from '../lib/study-style';
 import { toast } from '../lib/toasts';
 import type { ChartPanelState } from '../workspace/model';
-import { patchPanel } from '../workspace/store';
+import { doc, patchPanel } from '../workspace/store';
 import { tl, tlf } from '../lib/i18n';
 
 /** What the engine keeps of a chart's list (`parse_studies`). */
@@ -147,13 +147,23 @@ export function IndicatorPicker(props: { panel: ChartPanelState; onClose(): void
     props.onClose();
     setStudyEditing({ panelId: props.panel.id, id });
   };
-  const add = (id: string): boolean => {
+  const add = (id: string, studyStyles?: StudyStyles): boolean => {
     if (active().length >= MOST_STUDIES) {
       toast({ tone: 'warn', title: tlf('A chart holds {0} indicators', MOST_STUDIES), body: 'Remove one from the chart’s legend first.' });
       return false;
     }
-    patchPanel(props.panel.id, { studies: [...active(), id].join(',') });
+    patchPanel(props.panel.id, { studies: [...active(), id].join(','), ...(studyStyles && { studyStyles }) });
     return true;
+  };
+  /** One more on the chart, with what was saved as its default or its usual inputs; `another` beside one there already. */
+  const addFresh = async (e: Entry, another: boolean): Promise<string | null> => {
+    const saved = e.def && savedDefault(doc.studyDefaults, e.def.kind);
+    // A script's inputs are its own to read: the picker's row names none.
+    const def = saved && isFormulaKind(e.def!.kind) ? ((await formulaDefinition(e.def!.kind)) ?? e.def) : e.def;
+    if (!def) return null;
+    const start = startingValues(def, saved ?? null);
+    const id = another ? anotherId(def, active(), start) : studyId(def, start);
+    return id && add(id, saved ? startingStyles(props.panel.studyStyles, def.kind, id, saved) : undefined) ? id : null;
   };
   const toggleLayer = (id: string) => patchPanel(props.panel.id, { hidden: hidden().includes(id) ? hidden().filter((h) => h !== id).join(',') : [...hidden(), id].join(',') });
 
@@ -165,13 +175,10 @@ export function IndicatorPicker(props: { panel: ChartPanelState; onClose(): void
       else if (hidden().includes(e.id)) toggleLayer(e.id);
       else settings(e.id);
     } else if (on(e.id).length > 0) settings(on(e.id).at(-1)!);
-    else if (e.def) add(defaultId(e.def));
+    else if (e.def) void addFresh(e, false);
     input.select();
   };
-  const another = (e: Entry) => {
-    const id = e.def && anotherId(e.def, active());
-    if (id && add(id)) settings(id);
-  };
+  const another = (e: Entry) => void addFresh(e, true).then((id) => id && settings(id));
   const move = (by: number) => {
     setCur(Math.max(0, Math.min(flat().length - 1, cur() + by)));
     queueMicrotask(() => list.querySelector('.ind.cur')?.scrollIntoView({ block: 'nearest' }));

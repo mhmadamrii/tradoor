@@ -6,6 +6,7 @@
  */
 import { OI_VENUES } from '../engine/open-interest';
 import type { StudyDefinition, StudyLine, StudyParam } from '../engine/protocol';
+import { readStyles, type StudyStyles } from './study-style';
 
 export const CATEGORIES = ['Frost Script', 'Trend and averages', 'VWAP', 'Momentum', 'Volatility', 'Levels and structure', 'Flow and positioning', 'Time and cycles', 'Built in'] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -185,18 +186,29 @@ export function searchEntries<T extends Pick<Entry, 'id' | 'name' | 'short' | 'k
     .map((x) => x.e);
 }
 
-export const defaultId = (def: StudyDefinition): string => [def.kind, ...def.params.map((p) => p.default)].join(':');
+/** The inputs a study gained after its first ones are written only where set, so the ids charts already hold still name it (`StudySpec::id` in tradoor-core). */
+const WRITTEN: Record<string, number> = { vwap: 4 };
+
+/** A study's id with these inputs. */
+export function studyId(def: Pick<StudyDefinition, 'kind' | 'params'>, values: readonly number[]): string {
+  let n = values.length;
+  const kept = WRITTEN[def.kind] ?? n;
+  while (n > kept && values[n - 1] === def.params[n - 1]?.default) n -= 1;
+  return [def.kind, ...values.slice(0, n)].join(':');
+}
+
+export const defaultId = (def: StudyDefinition): string => studyId(def, def.params.map((p) => p.default));
 
 const ANOTHER_AVERAGE = [50, 200, 20, 100, 9, 21, 34, 55, 89, 144, 233];
 
 /** One more of a study already on the chart: a study's identity is its parameters, so its first takes a value not yet there. Null where there is none to pick. */
-export function anotherId(def: StudyDefinition, active: readonly string[]): string | null {
+export function anotherId(def: StudyDefinition, active: readonly string[], start = def.params.map((p) => p.default)): string | null {
   const first = def.params[0];
   if (!first || def.kind === 'oi' || def.kind === 'vpvr') return null;
-  const rest = def.params.slice(1).map((p) => p.default);
+  const rest = start.slice(1);
   const values = def.kind === 'vwap' ? [1, 2, 3] : def.kind === 'volumedelta' ? [0, 1] : def.kind === 'ema' || def.kind === 'sma' ? ANOTHER_AVERAGE : [2, 3, 4, 5, 6, 7, 8].map((k) => first.default * k);
   for (const v of values) {
-    const id = [def.kind, v, ...rest].join(':');
+    const id = studyId(def, [v, ...rest]);
     if (v <= first.max && !active.includes(id)) return id;
   }
   return null;
@@ -220,6 +232,8 @@ export interface ParamUi {
   band?: number;
   /** One checkbox per bit, with these names. */
   bits?: readonly string[];
+  /** A box to tick: 1 on, 0 off. */
+  toggle?: boolean;
 }
 
 const OI_LABELS: Record<(typeof OI_VENUES)[number], string> = {
@@ -243,10 +257,16 @@ const PARAMS: Record<string, Record<string, ParamUi>> = {
   macd: { fast: { label: 'Fast length' }, slow: { label: 'Slow length' }, signal: { label: 'Signal length' } },
   swingmap: { left: { label: 'Left bars', hint: 'Bars a pivot must stand above on its left' }, right: { label: 'Right bars', hint: 'Bars to its right before it is confirmed' } },
   vwap: {
+    hide: { label: 'Hide on 1D and above', toggle: true, hint: 'Draws nothing on daily bars and longer' },
     anchor: { label: 'Anchor', options: ['Session', 'Week', 'Month', 'Year', 'Quarter'], order: [0, 1, 2, 4, 3], hint: 'Where the average starts again. A session is a UTC day, and needs bars shorter than a day' },
-    band1: { label: 'Value area', band: 1, hint: 'Standard deviations of price around the VWAP. One holds about two thirds of the volume' },
+    source: { label: 'Price source', options: ['(H+L+C)/3', 'Open', 'High', 'Low', 'Close', '(H+L)/2', '(O+H+L+C)/4', '(H+L+C+C)/4'], order: [1, 2, 3, 4, 5, 0, 6, 7], hint: 'The price of each bar the average is taken of' },
+    offset: { label: 'Offset', hint: 'Bars the lines are moved by: to the right above 0, to the left below' },
+    mode: { label: 'Bands calculation', options: ['Standard deviation', 'Percentage'], hint: 'Bands at standard deviations of price around the VWAP, or at a percent of it' },
+    band1: { label: 'Value area', band: 1, hint: 'The first band. At one standard deviation it holds about two thirds of the volume' },
     band2: { label: 'Bands 2', band: 2 },
     band3: { label: 'Bands 3', band: 3 },
+    timeframe: { label: 'Timeframe', options: ['Chart', '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1D', '1W'], hint: 'Worked out on these bars, made from the chart’s own. One no longer than the chart’s bar is the chart’s' },
+    wait: { label: 'Wait for timeframe closes', toggle: true, hint: 'Moves only as a bar of that timeframe closes, so what is drawn does not change afterwards' },
   },
   vwaplevels: {
     periods: { label: 'Periods', bits: ['Day', 'Week', 'Month', 'Quarter', 'Year'] },
@@ -259,6 +279,10 @@ const PARAMS: Record<string, Record<string, ParamUi>> = {
     view: { label: 'View', options: ['Candles', 'Line'] },
   },
 };
+
+/** The order a study's inputs are asked for in, where not their own. */
+const PARAM_ORDER: Record<string, readonly number[]> = { vwap: [7, 0, 4, 5, 6, 1, 2, 3, 8, 9] };
+export const paramOrder = (kind: string, count: number): readonly number[] => PARAM_ORDER[kind]?.filter((i) => i < count) ?? [...Array(count).keys()];
 
 const titled = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 export const paramUi = (kind: string, param: StudyParam): ParamUi => PARAMS[kind]?.[param.name] ?? { label: titled(param.name) };
@@ -338,4 +362,67 @@ export function studyPlots(id: string, lines: readonly StudyLine[]): StylePlot[]
   if (kind === 'oi' && id.split(':')[3] !== '1') out.push({ key: 'up', label: 'Rising', theme: 'bull', noToggle: true, noWidth: true }, { key: 'down', label: 'Falling', theme: 'bear', noToggle: true, noWidth: true });
   if (kind === 'rsi' || kind === 'stochrsi') out.push(GUIDES_PLOT);
   return out;
+}
+
+// ---------------------------------------------------------------- saved defaults
+
+/*
+ * What an indicator starts with when it is added: the inputs and styles saved
+ * from its settings with Save as default, kept in the workspace (`studyDefaults`),
+ * so they go where it is synced and stay when another layout is opened. Styles
+ * are by `kind/plot` for its own and `owner/plot` for what it shares, as RSI's guides.
+ */
+
+export interface StudyDefault {
+  params: number[];
+  styles: StudyStyles;
+}
+
+const KIND = /^[a-z][a-z0-9-]{0,60}$/;
+const ownerOf = (key: string): string => key.slice(0, key.indexOf('/'));
+/** The one saved for `kind` in a workspace's `studyDefaults`, where it reads as one. */
+export function savedDefault(all: Record<string, unknown> | undefined, kind: string): StudyDefault | null {
+  const raw = all?.[kind];
+  if (!KIND.test(kind) || typeof raw !== 'object' || raw === null) return null;
+  const { params, styles } = raw as { params?: unknown; styles?: unknown };
+  if (!Array.isArray(params) || params.length > 64 || !params.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  return { params, styles: readStyles(styles) };
+}
+
+/** The workspace's `studyDefaults` with `saved` for `kind`, or with it forgotten at null. */
+export function withDefault(all: Record<string, unknown> | undefined, kind: string, saved: StudyDefault | null): Record<string, unknown> {
+  const next = { ...all };
+  if (saved) next[kind] = saved;
+  else delete next[kind];
+  return next;
+}
+
+/** Its inputs as saved, each where the study still takes it: a script changed since has its own default for the rest. */
+export function startingValues(def: Pick<StudyDefinition, 'params'>, saved: StudyDefault | null): number[] {
+  return def.params.map((p, i) => {
+    const v = saved?.params[i];
+    return v !== undefined && v >= p.min && v <= p.max ? v : p.default;
+  });
+}
+
+/** The saved styles on a study of `kind` that is `id` on the chart: its own, and a shared owner's where the chart has none yet. */
+export function startingStyles(styles: StudyStyles | undefined, kind: string, id: string, saved: StudyDefault | null): StudyStyles {
+  const next = { ...styles };
+  for (const [key, value] of Object.entries(saved?.styles ?? {})) {
+    const owner = ownerOf(key);
+    if (owner === kind) next[`${id}${key.slice(owner.length)}`] = value;
+    else next[key] ??= value;
+  }
+  return next;
+}
+
+/** What a study's settings show, to save: its inputs, its own styles and those of the owners it shares. */
+export function currentDefault(kind: string, id: string, params: number[], styles: StudyStyles | undefined, shared: readonly string[]): StudyDefault {
+  const own: StudyStyles = {};
+  for (const [key, value] of Object.entries(styles ?? {})) {
+    const owner = ownerOf(key);
+    if (owner === id) own[`${kind}${key.slice(owner.length)}`] = value;
+    else if (shared.includes(owner)) own[key] = value;
+  }
+  return { params, styles: own };
 }

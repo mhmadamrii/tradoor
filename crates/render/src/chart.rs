@@ -2757,7 +2757,9 @@ impl Chart {
 
     /// Whether an anchored line starts again at bar `i`.
     fn turned(&self, style: LineStyle, i: usize) -> bool {
-        let LineStyle::Anchored(anchor) = style else { return false };
+        let LineStyle::Anchored(anchor, shift) = style else { return false };
+        // Where its values came from, before they were moved.
+        let Some(i) = i.checked_add_signed(-shift) else { return false };
         i > 0 && i < self.candles.len() && anchor_period(self.candles[i - 1].open_time, anchor) != anchor_period(self.candles[i].open_time, anchor)
     }
 
