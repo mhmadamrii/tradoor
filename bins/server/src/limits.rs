@@ -49,6 +49,9 @@ pub const RELAY_HOST: Rate = Rate { name: "relay-host", per_min: 300.0, burst: 1
 /// Relayed candle calls to Bitfinex from everyone: it answers no browser itself,
 /// so every chart on it comes through here, and it allows an address thirty a minute.
 pub const RELAY_BITFINEX: Rate = Rate { name: "relay-bitfinex", per_min: 25.0, burst: 15.0 };
+/// Relayed calls to BingX from everyone: it answers no page itself, so every chart on
+/// it comes through here, and it allows an address about a hundred in ten seconds.
+pub const RELAY_BINGX: Rate = Rate { name: "relay-bingx", per_min: 300.0, burst: 60.0 };
 /// Relayed streams opened from one address.
 pub const RELAY_OPENS: Rate = Rate { name: "relay-opens", per_min: 60.0, burst: 30.0 };
 /// Relayed streams opened to one exchange socket from everyone: Binance bans an

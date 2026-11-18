@@ -8,7 +8,7 @@
 
 <p align="center">
   <b>A trading terminal in the browser, built for speed.</b><br>
-  Charts, market profile, footprints, a DOM, your own indicators and backtests, drawn by a Rust engine in WebAssembly, live from fourteen exchanges.
+  Charts, market profile, footprints, a DOM, your own indicators and backtests, drawn by a Rust engine in WebAssembly, live from fifteen exchanges.
 </p>
 
 <p align="center">
@@ -46,9 +46,9 @@
 
 **⚡ Light and fast.** The chart engine is Rust in a Web Worker, drawing with WebGL2 on an OffscreenCanvas, so the page thread never touches a candle. A minute chart with months behind it costs what one opened today does.
 
-**📊 Order flow and market profile.** A DOM and a tape on fourteen exchanges, TPO profiles by session, footprints with bid and ask at every price, liquidations and net taker flow.
+**📊 Order flow and market profile.** A DOM and a tape on fifteen exchanges, TPO profiles by session, footprints with bid and ask at every price, liquidations and net taker flow.
 
-**🔥 Live from the source.** Fourteen exchanges streamed straight to the browser: trades fold into the forming bar and order books fill the DOM.
+**🔥 Live from the source.** Fifteen exchanges streamed straight to the browser: trades fold into the forming bar and order books fill the DOM.
 
 **❄️ Your own indicators.** Frost Script, a small language that can only draw on its chart, with a Community to share scripts in.
 
@@ -75,13 +75,13 @@
 - Watchlists, price alerts to Telegram, themes, a US economic calendar
 - Signed in with Telegram, the same workspace on every device
 
-### Fourteen exchanges
+### Fifteen exchanges
 
 <p align="center">
   <img src="docs/screenshots/exchanges.webp" alt="The symbol search for BTC: fourteen exchanges' marks across the top, and BTC's markets on each of them, spot and perpetual, with price, change and volume, the busiest first" width="100%">
 </p>
 
-Binance, Bybit, OKX, Bitget, Kraken, Hyperliquid, Lighter, Gate, Aster, HTX, Bitfinex, Deribit, Coinbase and Bitstamp: some 16,500 markets in one search. Also TOTAL, TOTAL2, TOTAL3, BTC.D and the other market measures, the VIX, and the S&amp;P 500 and Nasdaq-100 as trade.xyz perpetuals.
+Binance, Bybit, OKX, Bitget, Kraken, Hyperliquid, Lighter, Gate, Aster, HTX, Bitfinex, Deribit, Coinbase, Bitstamp and BingX: some 17,700 markets in one search. Also TOTAL, TOTAL2, TOTAL3, BTC.D and the other market measures, the VIX, and the S&amp;P 500 and Nasdaq-100 as trade.xyz perpetuals.
 
 ### Indicators
 
@@ -98,7 +98,7 @@ Built-in, Community and My scripts in one searchable picker, and New Frost Scrip
   <img src="docs/screenshots/tape.webp" alt="The tape for BTCUSDT" width="53%">
 </p>
 
-The order book by price on all fourteen exchanges: bids, asks, what traded at each price, a volume profile and Pull/Stack. The tape prints every trade and lights the big ones.
+The order book by price on all fifteen exchanges: bids, asks, what traded at each price, a volume profile and Pull/Stack. The tape prints every trade and lights the big ones.
 
 ### Market profile and footprint
 

@@ -7,6 +7,7 @@
 
 pub mod aster;
 pub mod binance;
+pub mod bingx;
 pub mod bitfinex;
 pub mod bitget;
 pub mod bitstamp;

@@ -9,12 +9,12 @@ import { NoteInput } from '../components/NoteInput';
 import { lastPrice, onEngineFailure, send } from '../engine/client';
 import { api } from '../lib/api';
 import { deviceZone, formatClock, LOCAL_ZONE, offsetMinutes, timeZone, zoneLabel } from '../lib/timezone';
-import { MARK_ORDER, MARKS, markSpec } from '../lib/exchange-marks';
 import { useDismiss } from '../lib/dismiss';
 import { Icon } from '../lib/icons';
 import { tabTitle } from '../lib/tab-title';
 import { CHART_THEME, FONT_BOLD, FONT_PX, SCHEME, TEXT_SCALE, UI_THEME } from '../lib/theme';
 import { stepTimeframe, TIMEFRAMES } from '../lib/timeframes';
+import { loadMarks } from '../lib/exchanges';
 import { showAlertsPanel, startAlerts, unread } from '../lib/alerts';
 import { Toasts } from '../components/Toasts';
 import { toast } from '../lib/toasts';
@@ -122,7 +122,7 @@ function commands(): Command[] {
     { group: 'App', label: 'Settings and colours…', run: () => setOverlay({ kind: 'settings' }) },
     { group: 'App', label: 'Frost Script — write an indicator of your own', run: () => setEditing({ panelId: targetChart()?.id }) },
     { group: 'App', label: 'Keyboard shortcuts', hint: '?', run: () => setOverlay({ kind: 'help' }) },
-    { group: 'App', label: 'Support tradoor — exchange sign-ups and GitHub Sponsors', run: () => setOverlay({ kind: 'referrals' }) },
+    { group: 'App', label: 'Support tradoor', run: () => setOverlay({ kind: 'referrals' }) },
     {
       group: 'App',
       label: 'Reset workspace to default',
@@ -260,8 +260,8 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 function applyTheme(): void {
-  // The marks travel from here so the worker does not carry their artwork.
-  send({ t: 'marks', list: MARK_ORDER.map((id, index) => ({ index, box: MARKS[id].box, spec: markSpec(MARKS[id]) })) });
+  // The marks travel from here so the worker does not carry their artwork, and come a moment after the page.
+  void loadMarks().then(({ MARK_ORDER, MARKS, markSpec }) => send({ t: 'marks', list: MARK_ORDER.map((id, index) => ({ index, box: MARKS[id].box, spec: markSpec(MARKS[id]) })) }));
   for (const t of CHART_THEME) createEffect(() => send({ t: 'theme', key: t.name, value: doc.theme[t.name] ?? t.value }));
   // The zone's offset, again every minute: daylight saving moves it under a running page.
   createEffect(() => {

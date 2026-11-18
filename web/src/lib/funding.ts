@@ -3,7 +3,8 @@
  * when each settlement was and its rate, positive where longs pay. Read from
  * the exchange that runs the market, which keeps it: Binance, Bybit and
  * Hyperliquid for as far back as a chart goes, OKX for its last three months,
- * Bitget a page at a time. Another exchange's is not read, and the report says so.
+ * Bitget a page at a time, BingX through the tradoor server, which it answers where it
+ * answers no page. Another exchange's is not read, and the report says so.
  * Read by the page, for the strategy tester; through the tradoor server where
  * the network blocks the exchange, as the chart's candles are.
  */
@@ -11,12 +12,13 @@ import { parseMarket } from './markets';
 import { nativeOf } from './native';
 
 /** The exchange's answer, or the tradoor server's relay of it where the network will not reach the exchange. */
-async function getJson(url: string): Promise<unknown> {
+async function getJson(url: string, direct = true): Promise<unknown> {
+  const relayed = () => fetch(`/api/relay/rest?url=${encodeURIComponent(url)}`);
   let res: Response;
   try {
-    res = await fetch(url);
+    res = direct ? await fetch(url) : await relayed();
   } catch {
-    res = await fetch(`/api/relay/rest?url=${encodeURIComponent(url)}`);
+    res = await relayed();
   }
   if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
   return res.json();
@@ -35,7 +37,7 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 /** Whether funding is read for the market: a perpetual on one of the exchanges above. */
 export function fundingKnown(market: string): boolean {
   const venue = parseMarket(market)?.venue;
-  return venue === 'binance-perp' || venue === 'bybit-perp' || venue === 'okx-perp' || venue === 'hyperliquid-perp' || venue === 'bitget-perp';
+  return venue === 'binance-perp' || venue === 'bybit-perp' || venue === 'okx-perp' || venue === 'hyperliquid-perp' || venue === 'bitget-perp' || venue === 'bingx-perp';
 }
 
 async function postInfo(body: unknown): Promise<unknown> {
@@ -113,6 +115,19 @@ export async function fundingRates(market: string, from: number, to: number): Pr
         if (list.length === 0) break;
         for (const f of list) add(f.fundingTime, f.fundingRate);
         if (Math.min(...list.map((f) => num(f.fundingTime))) <= from || list.length < 100) break;
+      }
+      break;
+    }
+    case 'bingx-perp': {
+      // Newest first, a thousand a page, back from the end.
+      const symbol = await nativeOf(market);
+      let end = to;
+      for (let page = 0; page < MOST_PAGES; page++) {
+        const body = (await getJson(`https://open-api.bingx.com/openApi/swap/v2/quote/fundingRate?symbol=${symbol}&startTime=${from}&endTime=${end}&limit=1000`, false)) as { data?: { fundingRate: string; fundingTime: number }[] };
+        const list = Array.isArray(body.data) ? body.data : [];
+        for (const f of list) add(f.fundingTime, f.fundingRate);
+        if (list.length < 1000) break;
+        end = Math.min(...list.map((f) => num(f.fundingTime))) - 1;
       }
       break;
     }

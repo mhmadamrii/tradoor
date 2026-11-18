@@ -18,6 +18,7 @@ pub enum Exchange {
     Deribit,
     Coinbase,
     Bitstamp,
+    Bingx,
     /// Series this server works out itself — the crypto market's total
     /// capitalisation and its parts, and indices such as the VIX — rather
     /// than markets anyone trades.
@@ -65,11 +66,13 @@ pub enum Venue {
     CoinbaseSpot,
     BitstampSpot,
     BitstampPerp,
+    BingxSpot,
+    BingxPerp,
     Index,
 }
 
 impl Venue {
-    pub const ALL: [Venue; 25] = [
+    pub const ALL: [Venue; 27] = [
         Self::BinanceSpot,
         Self::BinancePerp,
         Self::BybitSpot,
@@ -94,6 +97,8 @@ impl Venue {
         Self::CoinbaseSpot,
         Self::BitstampSpot,
         Self::BitstampPerp,
+        Self::BingxSpot,
+        Self::BingxPerp,
         Self::Index,
     ];
 
@@ -123,6 +128,8 @@ impl Venue {
             Self::CoinbaseSpot => "coinbase-spot",
             Self::BitstampSpot => "bitstamp-spot",
             Self::BitstampPerp => "bitstamp-perp",
+            Self::BingxSpot => "bingx-spot",
+            Self::BingxPerp => "bingx-perp",
             Self::Index => "index",
         }
     }
@@ -153,6 +160,8 @@ impl Venue {
             Self::CoinbaseSpot => "Coinbase Spot",
             Self::BitstampSpot => "Bitstamp Spot",
             Self::BitstampPerp => "Bitstamp Perp",
+            Self::BingxSpot => "BingX Spot",
+            Self::BingxPerp => "BingX Perp",
             Self::Index => "Index",
         }
     }
@@ -173,6 +182,7 @@ impl Venue {
             Self::DeribitPerp => Exchange::Deribit,
             Self::CoinbaseSpot => Exchange::Coinbase,
             Self::BitstampSpot | Self::BitstampPerp => Exchange::Bitstamp,
+            Self::BingxSpot | Self::BingxPerp => Exchange::Bingx,
             Self::Index => Exchange::Index,
         }
     }
@@ -180,7 +190,7 @@ impl Venue {
     pub fn kind(self) -> Kind {
         match self {
             // An index is no perpetual: nothing is funded or liquidated on it.
-            Self::BinanceSpot | Self::BybitSpot | Self::OkxSpot | Self::BitgetSpot | Self::KrakenSpot | Self::GateSpot | Self::AsterSpot | Self::HtxSpot | Self::BitfinexSpot | Self::CoinbaseSpot | Self::BitstampSpot | Self::Index => Kind::Spot,
+            Self::BinanceSpot | Self::BybitSpot | Self::OkxSpot | Self::BitgetSpot | Self::KrakenSpot | Self::GateSpot | Self::AsterSpot | Self::HtxSpot | Self::BitfinexSpot | Self::CoinbaseSpot | Self::BitstampSpot | Self::BingxSpot | Self::Index => Kind::Spot,
             _ => Kind::Perp,
         }
     }

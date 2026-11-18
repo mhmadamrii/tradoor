@@ -20,7 +20,7 @@ INTERVALS['okx-perp'] = INTERVALS['okx-spot'];
 
 /** What the newer exchanges lack, or start somewhere other than on the chart's boundaries (their names are in venue-pack). */
 const LONG = ['6h', '12h', '1d', '1w', '1M'];
-const LACKS: Record<string, string[]> = { gate: ['1M'], htx: ['2h', ...LONG], bitfinex: ['2h'], deribit: ['4h', ...LONG], coinbase: ['30m', '2h', '4h', '12h', '1w', '1M'], bitstamp: ['1w', '1M'] };
+const LACKS: Record<string, string[]> = { gate: ['1M'], htx: ['2h', ...LONG], bitfinex: ['2h'], deribit: ['4h', ...LONG], coinbase: ['30m', '2h', '4h', '12h', '1w', '1M'], bitstamp: ['1w', '1M'], 'bingx-spot': ['6h', '12h', '1d', '1w', '1M'] };
 
 /** Shorter lengths a missing one is folded from, best first; each divides it on UTC boundaries. */
 const DAY = ['4h', '2h', '1h'];
@@ -28,7 +28,7 @@ const FALLBACK: Record<string, string[]> = { '30m': ['15m'], '2h': ['1h'], '4h':
 
 const serves = (venue: Venue, interval: string): boolean => {
   const names = INTERVALS[venue];
-  return names ? !!names[interval] : !LACKS[venue.split('-')[0]!]?.includes(interval);
+  return names ? !!names[interval] : !(LACKS[venue] ?? LACKS[venue.split('-')[0]!])?.includes(interval);
 };
 
 /** The length to ask `venue` for when the chart wants `interval`. */

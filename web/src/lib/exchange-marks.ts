@@ -21,6 +21,8 @@ export interface ExchangeMark {
 
 /** The black disc every mark sits on, as a path rather than a <circle>. */
 const DISC = { d: 'M0 16a16 16 0 1 0 32 0a16 16 0 1 0-32 0', fill: '#000' };
+/** BingX's mark is the one half twice. */
+const BINGX_HALF = 'M0 13v13h6c14 2 30 10 36 19c5 7-22 24-39 24h-3v26h4c15 0 35-8 50-20c3-3 6-5 7-4c1 0 1-8 1-23c0-16 0-23-1-23c-1 0-3-1-6-4c-14-12-35-21-51-21h-4v13z';
 /** The same disc for a mark drawn in a 16-unit box. */
 const DISC16 = { d: 'M0 8a8 8 0 1 0 16 0a8 8 0 1 0-16 0', fill: '#000' };
 
@@ -66,6 +68,12 @@ export const MARKS: Record<ExchangeId, ExchangeMark> = {
       { t: [2, 2, 1.16667], fill: '#00F0FF', d: 'M11.121 9.46h4.283l4.381 4.555a.785.785 0 0 1 .003 1.076L14.17 21H9.757l1.334-1.357l4.898-5.092l-4.836-5.092' },
       { t: [2, 2, 1.16667], fill: '#00F0FF', d: 'M12.879 14.54H8.596L4.215 9.986a.785.785 0 0 1-.003-1.076L9.83 3h4.412l-1.334 1.357L8.01 9.449l4.836 5.092' },
     ],
+  },
+  // BingX's X, traced from its app icon, in the blue of its favicon: its left half, and
+  // the same turned half a circle, as the mark is.
+  bingx: {
+    box: 32,
+    paths: [DISC, { t: [5.5, 7.688, 0.175], fill: '#0047FF', d: BINGX_HALF }, { t: [26.5, 24.313, -0.175], fill: '#0047FF', d: BINGX_HALF }],
   },
   gate: {
     box: 32,

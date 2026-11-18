@@ -34,6 +34,8 @@ pub fn stream_urls(venue: Venue) -> &'static [&'static str] {
         Venue::DeribitPerp => &["wss://www.deribit.com/ws/api/v2"],
         Venue::CoinbaseSpot => &["wss://ws-feed.exchange.coinbase.com"],
         Venue::BitstampSpot | Venue::BitstampPerp => &["wss://ws.bitstamp.net"],
+        Venue::BingxSpot => &["wss://open-api-ws.bingx.com/market"],
+        Venue::BingxPerp => &["wss://open-api-swap.bingx.com/swap-market"],
         // An index is worked out here: nothing trades on it.
         Venue::Index => &[],
     }
@@ -82,6 +84,7 @@ pub fn subscribe(venue: Venue, symbols: &[String]) -> Vec<String> {
         // The heartbeat is what keeps a socket on a quiet product from looking dead.
         Venue::CoinbaseSpot => vec![format!("{{\"type\":\"subscribe\",\"product_ids\":[{}],\"channels\":[\"matches\",\"heartbeat\"]}}", quoted(symbols))],
         Venue::BitstampSpot | Venue::BitstampPerp => symbols.iter().map(|s| format!("{{\"event\":\"bts:subscribe\",\"data\":{{\"channel\":\"live_trades_{s}\"}}}}")).collect(),
+        Venue::BingxSpot | Venue::BingxPerp => symbols.iter().map(|s| format!("{{\"id\":\"{s}\",\"reqType\":\"sub\",\"dataType\":\"{s}@trade\"}}")).collect(),
         // Binance, and Aster, which speaks as Binance does.
         _ => {
             let params: Vec<String> = symbols.iter().map(|s| format!("\"{}@aggTrade\"", s.to_lowercase())).collect();
@@ -106,6 +109,9 @@ pub fn ping(venue: Venue) -> Option<String> {
         Venue::AsterSpot | Venue::AsterPerp => "{\"method\":\"LIST_SUBSCRIPTIONS\",\"id\":0}",
         Venue::DeribitPerp => "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"public/test\"}",
         Venue::BitstampSpot | Venue::BitstampPerp => "{\"event\":\"bts:heartbeat\"}",
+        // BingX's perpetuals close a socket that sends no Pong for half a minute;
+        // one unasked every fifteen seconds is taken, as is the answer to each Ping.
+        Venue::BingxPerp => "Pong",
         _ => return None,
     };
     Some(word.to_string())
@@ -113,16 +119,22 @@ pub fn ping(venue: Venue) -> Option<String> {
 
 /// Whether a venue's frames arrive gzipped, as binary.
 pub fn gzipped(venue: Venue) -> bool {
-    matches!(venue, Venue::HtxSpot | Venue::HtxPerp)
+    matches!(venue, Venue::HtxSpot | Venue::HtxPerp | Venue::BingxSpot | Venue::BingxPerp)
 }
 
 /// The answer to a frame of the exchange's own. HTX pings, and closes a socket
-/// that does not answer.
+/// that does not answer; BingX's perpetuals say `Ping`, its spot a ping with the time.
 pub fn reply(venue: Venue, text: &str) -> Option<String> {
+    if venue == Venue::BingxPerp && text == "Ping" {
+        return Some("Pong".to_string());
+    }
     if !gzipped(venue) || !text.starts_with("{\"ping\"") {
         return None;
     }
     let frame: Value = serde_json::from_str(text).ok()?;
+    if venue == Venue::BingxSpot {
+        return Some(json!({ "pong": frame.get("ping")?, "time": frame.get("time")? }).to_string());
+    }
     Some(json!({ "pong": frame.get("ping")? }).to_string())
 }
 
@@ -269,6 +281,17 @@ pub fn read_prints<'a>(venue: Venue, frame: &'a Value, into: &mut Vec<Print<'a>>
                 let (Some(symbol), Some(price), Some(size)) = (r["contract"].as_str(), num(&r["price"]), r["size"].as_f64()) else { continue };
                 // In contracts; a negative size is a sale. It is the price that is read here.
                 into.push(Print { symbol, price, qty: size.abs(), buy: size > 0.0, at: millis(&r["create_time_ms"]) });
+            }
+        }
+        // A perpetual's trades come as a list, a spot pair's one at a time; `m` is a sale.
+        Venue::BingxSpot | Venue::BingxPerp => {
+            if !frame["dataType"].as_str().is_some_and(|t| t.ends_with("@trade")) {
+                return;
+            }
+            let data = &frame["data"];
+            for r in data.as_array().map_or_else(|| std::slice::from_ref(data), Vec::as_slice) {
+                let (Some(symbol), Some(price), Some(qty)) = (r["s"].as_str(), num(&r["p"]), num(&r["q"])) else { continue };
+                into.push(Print { symbol, price, qty, buy: r["m"] != true, at: millis(&r["T"]) });
             }
         }
         Venue::HtxSpot | Venue::HtxPerp => {
@@ -467,6 +490,20 @@ mod tests {
         assert_eq!(reply(Venue::BinancePerp, r#"{"ping":1}"#), None);
         assert_eq!(subscribe(Venue::HtxSpot, &["btcusdt".to_string()]), [r#"{"sub":"market.btcusdt.trade.detail","id":"btcusdt"}"#]);
         assert!(gzipped(Venue::HtxSpot) && !gzipped(Venue::GateSpot));
+    }
+
+    // Captured 2026-11-18.
+    #[test]
+    fn bingx_trades_and_pings() {
+        let perp = r#"{"code":0,"dataType":"BTC-USDT@trade","data":[{"t":"763380908","q":"0.0008","p":"64053.8","T":1795006913084,"m":true,"s":"BTC-USDT"}]}"#;
+        assert_eq!(timed_prints(Venue::BingxPerp, perp), [("BTC-USDT".to_string(), 64_053.8, 0.0008, false, 1_795_006_913_084)]);
+        let spot = r#"{"code":0,"data":{"E":1795007347321,"T":1795007347307,"e":"trade","m":false,"p":"64047.03","q":"0.109742","s":"BTC-USDT","t":"248479918"},"dataType":"BTC-USDT@trade","success":true}"#;
+        assert_eq!(timed_prints(Venue::BingxSpot, spot), [("BTC-USDT".to_string(), 64_047.03, 0.109742, true, 1_795_007_347_307)]);
+        assert!(prints(Venue::BingxPerp, r#"{"code":0,"dataType":"BTC-USDT@depth20@500ms","data":{"bids":[]}}"#).is_empty());
+        assert_eq!(reply(Venue::BingxPerp, "Ping").as_deref(), Some("Pong"));
+        assert_eq!(reply(Venue::BingxSpot, r#"{"ping":"21cdde74","time":"2026-11-18T21:09:56.293+0800"}"#).as_deref(), Some(r#"{"pong":"21cdde74","time":"2026-11-18T21:09:56.293+0800"}"#));
+        assert_eq!(subscribe(Venue::BingxPerp, &["BTC-USDT".to_string()]), [r#"{"id":"BTC-USDT","reqType":"sub","dataType":"BTC-USDT@trade"}"#]);
+        assert!(gzipped(Venue::BingxSpot) && gzipped(Venue::BingxPerp));
     }
 
     #[test]

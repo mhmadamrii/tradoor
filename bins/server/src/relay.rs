@@ -28,7 +28,7 @@ use crate::dns::Doh;
 /// REST calls a chart makes, by host and exact path — or by a prefix ending
 /// in `/`, where the market is part of the path (Kraken Futures' charts).
 /// Hyperliquid's are POSTs and are not relayed.
-const REST: [(&str, &[&str]); 18] = [
+const REST: [(&str, &[&str]); 19] = [
     // `depth`: the order book a DOM lays the stream's changes over. `fundingRate` and the
     // others' funding histories: what a backtest pays on a perpetual.
     ("api.binance.com", &["/api/v3/klines", "/api/v3/ping", "/api/v3/depth"]),
@@ -53,6 +53,8 @@ const REST: [(&str, &[&str]); 18] = [
     ("www.deribit.com", &["/api/v2/public/get_tradingview_chart_data"]),
     ("api.exchange.coinbase.com", &["/products/"]),
     ("www.bitstamp.net", &["/api/v2/ohlc/"]),
+    // Refuses any request a page makes: a BingX chart's bars, and a backtest's funding, come through here.
+    ("open-api.bingx.com", &["/openApi/swap/v3/quote/klines", "/openApi/spot/v2/market/kline", "/openApi/swap/v2/quote/fundingRate"]),
 ];
 /// Upstream responses larger than this are refused: a kline page is a few hundred kilobytes.
 const MAX_BODY: usize = 8 * 1024 * 1024;
@@ -90,6 +92,8 @@ fn stream_url(venue: &str) -> Option<&'static str> {
         "deribit-perp" => "wss://www.deribit.com/ws/api/v2",
         "coinbase-spot" => "wss://ws-feed.exchange.coinbase.com",
         "bitstamp-spot" | "bitstamp-perp" => "wss://ws.bitstamp.net",
+        "bingx-spot" => "wss://open-api-ws.bingx.com/market",
+        "bingx-perp" => "wss://open-api-swap.bingx.com/swap-market",
         _ => return None,
     })
 }
@@ -132,7 +136,11 @@ pub async fn rest(State(state): State<AppState>, Query(q): Query<RestQuery>) -> 
         return Err(ApiError(StatusCode::FORBIDDEN, "only the exchanges' market data calls are relayed".into()));
     }
     // Everyone's relayed calls to one exchange together stay well under what it would ban this server for.
-    let rate = if url.host_str() == Some("api-pub.bitfinex.com") { limits::RELAY_BITFINEX } else { limits::RELAY_HOST };
+    let rate = match url.host_str() {
+        Some("api-pub.bitfinex.com") => limits::RELAY_BITFINEX,
+        Some("open-api.bingx.com") => limits::RELAY_BINGX,
+        _ => limits::RELAY_HOST,
+    };
     if !state.limits.take(rate, url.host_str().unwrap_or_default()) {
         return Ok(limits::too_many("relayed calls to this exchange"));
     }
@@ -286,6 +294,9 @@ mod tests {
         assert!(ok("https://www.okx.com/api/v5/market/history-candles?instId=BTC-USDT&bar=1H"));
         assert!(!ok("https://www.okx.com/api/v5/trade/order"));
         assert!(ok("https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000"));
+        assert!(ok("https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=BTC-USDT&interval=1h&limit=1000"));
+        assert!(ok("https://open-api.bingx.com/openApi/spot/v2/market/kline?symbol=BTC-USDT&interval=1h&limit=1000"));
+        assert!(!ok("https://open-api.bingx.com/openApi/swap/v2/user/balance"), "nothing of an account's");
         assert!(ok("https://www.okx.com/api/v5/public/instruments?instType=SWAP&instId=BTC-USDT-SWAP"));
         assert!(ok("https://api-pub.bitfinex.com/v2/candles/trade:1m:tBTCF0:USTF0/hist?limit=100"));
         assert!(!ok("https://api-pub.bitfinex.com/v2/auth/r/wallets"), "no account calls");

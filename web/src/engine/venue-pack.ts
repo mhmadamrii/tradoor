@@ -1,5 +1,5 @@
 /**
- * The newer exchanges — Gate, Aster, HTX, Bitfinex, Deribit, Coinbase, Bitstamp: their
+ * The newer exchanges — Gate, Aster, HTX, Bitfinex, Deribit, Coinbase, Bitstamp, BingX: their
  * sockets and their candle loaders, in a file of their own, fetched the first
  * time a market on one of them is opened. The engine's worker carries its lazy
  * imports inline (see vite.config), so anywhere else this would be in every
@@ -31,6 +31,9 @@ const BITFINEX_NAMES: Record<string, string> = { '1d': '1D', '1w': '1W' };
 const DERIBIT_NAMES: Record<string, string> = { '1m': '1', '5m': '5', '15m': '15', '30m': '30', '1h': '60', '2h': '120' };
 const COINBASE_NAMES: Record<string, string> = { '1m': '60', '5m': '300', '15m': '900', '1h': '3600', '6h': '21600', '1d': '86400' };
 const BITSTAMP_NAMES: Record<string, string> = { '1m': '60', '5m': '300', '15m': '900', '30m': '1800', '1h': '3600', '2h': '7200', '4h': '14400', '6h': '21600', '12h': '43200', '1d': '86400' };
+
+/** BingX spot's socket names for a bar length; its perpetuals use the chart's own. Spot's days start at 16:00 UTC, so it is not asked for those. */
+const BINGX_SPOT_NAMES: Record<string, string> = { '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '60min', '2h': '2hour', '4h': '4hour' };
 
 /** Gate's spot week is `7d`, its perpetuals' `1w`: its perpetuals' `7d` starts on a Thursday. */
 const gateName = (venue: Venue, interval: string): string => (venue === 'gate-spot' && interval === '1w' ? '7d' : interval);
@@ -402,6 +405,37 @@ function bitstamp(urls: string[]): Protocol {
   };
 }
 
+/**
+ * BingX: gzip frames on both sockets. Its perpetuals say `Ping` as text and close a
+ * socket that sends no `Pong` for half a minute, and one sent unasked every fifteen
+ * seconds is taken; its spot pings with JSON and wants the same ping back as a pong.
+ */
+function bingx(urls: string[], spot: boolean): Protocol {
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    urls,
+    quiet: true,
+    topic: (spec) => (spec.kind === 'kline' ? `${spec.symbol}@kline_${spot ? (BINGX_SPOT_NAMES[spec.interval] ?? spec.interval) : spec.interval}` : ''),
+    frames: (op, topics) => topics.map((t) => ({ id: t, reqType: op === 'subscribe' ? 'sub' : 'unsub', dataType: t })),
+    reply: (m) => (m.ping ? { pong: m.ping, time: m.time } : null),
+    inflate(data) {
+      const text = tail.then(() => gunzip(data));
+      tail = text;
+      return text;
+    },
+    read(m, emit) {
+      const topic = m.dataType;
+      if (typeof topic !== 'string' || !topic.includes('@kline_')) return;
+      // Spot sends a bar as `K` with its start as `t`; a perpetual a list, the start as `T`.
+      const data = m.data as Json | Json[] | undefined;
+      for (const k of spot ? [(data as Json | undefined)?.K as Json | undefined] : Array.isArray(data) ? data : []) {
+        if (k) emit(topic, bar(num(spot ? k.t : k.T), k.o, k.h, k.l, k.c, num(k.v)));
+      }
+    },
+    ...(spot ? {} : { heartbeat: 'Pong' }),
+  };
+}
+
 export const PROTOCOLS: Record<string, () => Protocol> = {
   'gate-spot': () => gate(['wss://api.gateio.ws/ws/v4/', ...relay('gate-spot')], 'spot'),
   'gate-perp': () => gate(['wss://fx-ws.gateio.ws/v4/ws/usdt', ...relay('gate-perp')], 'futures'),
@@ -415,6 +449,8 @@ export const PROTOCOLS: Record<string, () => Protocol> = {
   'coinbase-spot': () => coinbase(['wss://ws-feed.exchange.coinbase.com', ...relay('coinbase-spot')]),
   'bitstamp-spot': () => bitstamp(['wss://ws.bitstamp.net', ...relay('bitstamp-spot')]),
   'bitstamp-perp': () => bitstamp(['wss://ws.bitstamp.net', ...relay('bitstamp-perp')]),
+  'bingx-spot': () => bingx(['wss://open-api-ws.bingx.com/market', ...relay('bingx-spot')], true),
+  'bingx-perp': () => bingx(['wss://open-api-swap.bingx.com/swap-market', ...relay('bingx-perp')], false),
 };
 
 const inRange = (list: Row[], range: Range): Row[] => list.filter((r) => (range.start === undefined || r[0]! >= range.start) && (range.end === undefined || r[0]! <= range.end));
@@ -520,6 +556,20 @@ export async function rows(ref: MarketRef, native: string, interval: string, ran
       // The last `limit` bars up to `end`, oldest first, whatever a start says. A
       // minute nobody traded in, or a closed market's, has a bar of its own.
       return inRange(bitstampRows(await getJson(bitstampBars(native, BITSTAMP_NAMES[interval] ?? interval, `limit=${limit}&end=${sec(end)}`))), range);
+    case 'bingx-perp': {
+      // `limit` bars up to the end, newest first. Through the relay: BingX answers no page.
+      const body = (await getJson(`https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=${native}&interval=${interval}&limit=${limit}&endTime=${end}`)) as { data?: Json[]; msg?: string };
+      if (!Array.isArray(body.data)) throw new Error(body.msg || 'BingX refused the candle request');
+      return inRange(body.data.map((k): Row => [num(k.time), num(k.open), num(k.high), num(k.low), num(k.close), num(k.volume)]).sort((a, b) => a[0]! - b[0]!), range);
+    }
+    case 'bingx-spot':
+      return byTime(range, limit, ms, async (from, to) => {
+        // `[time, open, high, low, close, coins, close time, quote volume]`, newest first. Its
+        // minute bars are kept a week: an older page answers with a message and no rows.
+        const body = (await getJson(`https://open-api.bingx.com/openApi/spot/v2/market/kline?symbol=${native}&interval=${interval}&startTime=${from}&endTime=${to}&limit=${limit}`)) as { data?: unknown[][] };
+        if (!Array.isArray(body.data)) return [];
+        return inRange(body.data.map((r): Row => [num(r[0]), num(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5])]).sort((a, b) => a[0]! - b[0]!), { start: from, end: to });
+      });
     default:
       throw new Error(`no candle loader for ${ref.venue}`);
   }

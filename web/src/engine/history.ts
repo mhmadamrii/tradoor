@@ -149,8 +149,8 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * rest of the page and its next load are told (see reach).
  */
 // Kraken Futures answers with an empty Access-Control-Allow-Origin, which no browser
-// accepts; Bitfinex's candles and Deribit's chart data with none at all.
-const RELAYED = new Set(['futures.kraken.com', 'api-pub.bitfinex.com', 'www.deribit.com']);
+// accepts; Bitfinex's candles and Deribit's chart data with none at all; BingX refuses any page.
+const RELAYED = new Set(['futures.kraken.com', 'api-pub.bitfinex.com', 'www.deribit.com', 'open-api.bingx.com']);
 
 /**
  * A request that has not begun to answer by now is taken as refused: a

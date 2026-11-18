@@ -1,7 +1,7 @@
 //! The market catalogue a symbol search offers: every tradable spot and
 //! perpetual market on Binance, Bybit, OKX, Bitget, Hyperliquid (trade.xyz's
 //! stocks and indices with its coins), Kraken, Lighter, Gate, Aster, HTX,
-//! Bitfinex, Bitstamp, Deribit and Coinbase (spot alone), with 24h stats, and each
+//! Bitfinex, Bitstamp, BingX, Deribit and Coinbase (spot alone), with 24h stats, and each
 //! exchange's own name for it where that is not this app's — and the series
 //! this server works out itself (`indices`).
 //!
@@ -22,7 +22,7 @@ use axum::body::Bytes;
 use serde::Serialize;
 use serde_json::json;
 use tokio::sync::Mutex;
-use tradoor_venues::{aster, binance, bitfinex, bitget, bitstamp, bybit, coinbase, deribit, gate, htx, hyperliquid, kraken, lighter, okx, Exchange, Product, Venue};
+use tradoor_venues::{aster, binance, bingx, bitfinex, bitget, bitstamp, bybit, coinbase, deribit, gate, htx, hyperliquid, kraken, lighter, okx, Exchange, Product, Venue};
 
 const TTL: Duration = Duration::from_secs(30 * 60);
 
@@ -193,6 +193,14 @@ impl Catalog {
             Exchange::Bitstamp => {
                 let (list, tickers) = self.pair(bitstamp::markets_url(), bitstamp::tickers_url()).await?;
                 bitstamp::parse_products(venue, &list, tickers.as_deref()).map_err(err)
+            }
+            Exchange::Bingx if venue == Venue::BingxSpot => {
+                let (list, tickers) = self.pair(bingx::spot_symbols_url(), bingx::spot_tickers_url()).await?;
+                bingx::parse_spot(&list, tickers.as_deref()).map_err(err)
+            }
+            Exchange::Bingx => {
+                let (list, tickers) = self.pair(bingx::contracts_url(), bingx::perp_tickers_url()).await?;
+                bingx::parse_perps(&list, tickers.as_deref()).map_err(err)
             }
             Exchange::Coinbase => {
                 let (list, stats) = self.pair(coinbase::products_url(), coinbase::stats_url()).await?;

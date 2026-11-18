@@ -202,6 +202,45 @@ function bitstamp(urls: string[]): Protocol {
   };
 }
 
+/**
+ * BingX: the best hundred levels a side, whole, a few times a second (spot's asks
+ * highest first). A perpetual's trades come in a list, a spot pair's one at a time;
+ * `m` marks a sale. Frames are gzipped; the perpetuals' socket wants a `Pong` now and
+ * then (see venue-pack), spot's ping is answered with itself.
+ */
+function bingx(urls: string[], spot: boolean): Protocol {
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    urls,
+    quiet: true,
+    topic: (spec) => `${spec.symbol}@${spec.kind === 'book' ? (spot ? 'depth100' : 'depth100@100ms') : 'trade'}`,
+    frames: (op, topics) => topics.map((t) => ({ id: t, reqType: op === 'subscribe' ? 'sub' : 'unsub', dataType: t })),
+    reply: (m) => (m.ping ? { pong: m.ping, time: m.time } : null),
+    inflate(data) {
+      const text = tail.then(async () => {
+        try {
+          return await new Response(data.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+        } catch {
+          return '';
+        }
+      });
+      tail = text;
+      return text;
+    },
+    read(m, emit) {
+      const topic = m.dataType;
+      const d = m.data as Json | Json[] | undefined;
+      if (typeof topic !== 'string' || !d) return;
+      if (topic.endsWith('@trade')) {
+        for (const t of Array.isArray(d) ? d : [d]) emit(topic, { kind: 'print', time: num(t.T), price: num(t.p), qty: num(t.q), buy: t.m !== true });
+      } else if (topic.includes('@depth') && !Array.isArray(d)) {
+        emit(topic, book(true, d.bids, d.asks));
+      }
+    },
+    ...(spot ? {} : { heartbeat: 'Pong' }),
+  };
+}
+
 export const SOCKETS: Record<string, () => Protocol> = {
   'gate-spot': () => gate(['wss://api.gateio.ws/ws/v4/', ...relay('gate-spot')], 'spot'),
   'gate-perp': () => gate(['wss://fx-ws.gateio.ws/v4/ws/usdt', ...relay('gate-perp')], 'futures'),
@@ -216,4 +255,6 @@ export const SOCKETS: Record<string, () => Protocol> = {
   'coinbase-spot': () => coinbase(['wss://ws-feed.exchange.coinbase.com', ...relay('coinbase-spot')]),
   'bitstamp-spot': () => bitstamp(['wss://ws.bitstamp.net', ...relay('bitstamp-spot')]),
   'bitstamp-perp': () => bitstamp(['wss://ws.bitstamp.net', ...relay('bitstamp-perp')]),
+  'bingx-spot': () => bingx(['wss://open-api-ws.bingx.com/market', ...relay('bingx-spot')], true),
+  'bingx-perp': () => bingx(['wss://open-api-swap.bingx.com/swap-market', ...relay('bingx-perp')], false),
 };

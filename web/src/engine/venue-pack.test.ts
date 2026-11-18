@@ -320,3 +320,40 @@ Deno.test('lengths an exchange lacks, or starts off the chart\'s boundaries, are
   assertEquals(restInterval('hyperliquid-perp', '1w'), '1d');
   assertEquals(restInterval('binance-perp', '1M'), '1M');
 });
+
+// Frames and answers as BingX sent them on 2026-11-18.
+Deno.test('BingX: a perpetual bar in a list, a spot bar as K; spot asked by its own names', () => {
+  const perp = read('bingx-perp', [
+    { id: 'x', code: 0, msg: '', dataType: '', data: null },
+    { code: 0, dataType: 'BTC-USDT@kline_1m', s: 'BTC-USDT', data: [{ c: '64053.8', o: '64035.5', h: '64054.2', l: '64034.4', v: '1.3140', T: 1795006860000 }] },
+  ]);
+  assertEquals(perp, [['BTC-USDT@kline_1m', { kind: 'kline', openTime: 1795006860000, open: 64035.5, high: 64054.2, low: 64034.4, close: 64053.8, volume: 1.314, lastTradeId: 0, closed: false }]]);
+  const spot = read('bingx-spot', [
+    { code: 0, dataType: 'BTC-USDT@kline_1min', data: { E: 1795007347320, K: { T: 1795007399999, c: '64047.036', h: '64048.079', i: '1min', l: '64028.41', o: '64028.41', s: 'BTC-USDT', t: 1795007340000, v: '0.36364' }, e: 'kline', s: 'BTC-USDT' }, success: true },
+  ]);
+  assertEquals(spot[0]![0], 'BTC-USDT@kline_1min');
+  assertEquals((spot[0]![1] as { openTime: number; volume: number }).openTime, 1795007340000);
+  const p = PROTOCOLS['bingx-perp']!();
+  const s = PROTOCOLS['bingx-spot']!();
+  assertEquals(p.topic({ kind: 'kline', symbol: 'BTC-USDT', interval: '1h' } as never, 'bingx-perp'), 'BTC-USDT@kline_1h');
+  assertEquals(s.topic({ kind: 'kline', symbol: 'BTC-USDT', interval: '1h' } as never, 'bingx-spot'), 'BTC-USDT@kline_60min');
+  assertEquals(p.frames('subscribe', ['BTC-USDT@kline_1m']), [{ id: 'BTC-USDT@kline_1m', reqType: 'sub', dataType: 'BTC-USDT@kline_1m' }]);
+  assertEquals(p.frames('unsubscribe', ['BTC-USDT@kline_1m']), [{ id: 'BTC-USDT@kline_1m', reqType: 'unsub', dataType: 'BTC-USDT@kline_1m' }]);
+  // The perpetuals' socket closes on one that sends no Pong; spot pings with JSON and gets it back.
+  assertEquals(p.heartbeat, 'Pong');
+  assertEquals(s.heartbeat, undefined);
+  assertEquals(s.reply!({ ping: '21cdde74', time: '2026-11-18T21:09:56.293+0800' }), { pong: '21cdde74', time: '2026-11-18T21:09:56.293+0800' });
+  // Spot's days start at 16:00 UTC: folded from four-hour bars, as the perpetuals' are not.
+  assertEquals(restInterval('bingx-spot', '1d'), '4h');
+  assertEquals(restInterval('bingx-perp', '1d'), '1d');
+});
+
+Deno.test('BingX candles: newest first, put oldest first; an old spot minute page is empty', async () => {
+  const perp = answering({ code: 0, msg: '', data: [{ open: '64052.1', close: '64040.3', high: '64068.2', low: '64020.0', volume: '51.6417', time: 1795006800000 }, { open: '64207.6', close: '64052.1', high: '64364.5', low: '63939.7', volume: '919.4619', time: 1795003200000 }] });
+  assertEquals(await rows(ref('bingx-perp:BTCUSDT'), 'BTC-USDT', '1h', { end: 1795010400000 }, 999, perp.getJson, 3_600_000), [[1795003200000, 64207.6, 64364.5, 63939.7, 64052.1, 919.4619], [1795006800000, 64052.1, 64068.2, 64020, 64040.3, 51.6417]]);
+  assert(perp.asked[0]!.startsWith('https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=BTC-USDT&interval=1h&limit=999&endTime=1795010400000'));
+  const spot = answering({ code: 0, timestamp: 1795007227322, data: [[1795006800000, 64088.46, 64099.99, 64038.19, 64049.76, 9.698609, 1795010399999, 621406.52]] });
+  assertEquals(await rows(ref('bingx-spot:BTCUSDT'), 'BTC-USDT', '1h', { start: 1795006800000, end: 1795010400000 }, 999, spot.getJson, 3_600_000), [[1795006800000, 64088.46, 64099.99, 64038.19, 64049.76, 9.698609]]);
+  const gone = answering({ code: 100204, msg: 'The maximum query range for BTC_USDT K-lines is 7 days and 0 hours.' });
+  assertEquals(await rows(ref('bingx-spot:BTCUSDT'), 'BTC-USDT', '1m', { start: 1700000000000 - 999 * MINUTE, end: 1700000000000 }, 999, gone.getJson, MINUTE), []);
+});

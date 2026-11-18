@@ -41,6 +41,8 @@ const FEES: Record<string, [number, number]> = {
   'coinbase-spot': [0.6, 0.4],
   'bitstamp-spot': [0.4, 0.3],
   'bitstamp-perp': [0.05, 0.02],
+  'bingx-spot': [0.1, 0.1],
+  'bingx-perp': [0.05, 0.02],
 };
 
 /** The fees a market is tested with where the tester takes the exchange's: taker, maker, in percent. */

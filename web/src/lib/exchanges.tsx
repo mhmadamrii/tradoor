@@ -3,12 +3,12 @@
  * streams and history loaders.
  * Marks are the official ones, on a black disc, from rsalianto's exchange icons.
  */
-import { Show, type Component, type JSX } from 'solid-js';
+import { createSignal, Show, type Component, type JSX } from 'solid-js';
 import { Dynamic, For } from 'solid-js/web';
-import { MARKS, type ExchangeMark } from './exchange-marks';
+import type { ExchangeMark } from './exchange-marks';
 import { parseMarket, ratioLegs, venueLabel, type Venue } from './markets';
 
-export type ExchangeId = 'binance' | 'bybit' | 'okx' | 'bitget' | 'hyperliquid' | 'kraken' | 'lighter' | 'index' | 'gate' | 'htx' | 'bitfinex' | 'aster' | 'deribit' | 'coinbase' | 'bitstamp';
+export type ExchangeId = 'binance' | 'bybit' | 'okx' | 'bitget' | 'hyperliquid' | 'kraken' | 'lighter' | 'index' | 'gate' | 'htx' | 'bitfinex' | 'aster' | 'deribit' | 'coinbase' | 'bitstamp' | 'bingx';
 
 interface LogoProps {
   size?: number;
@@ -40,8 +40,20 @@ function Paths(props: LogoProps & { mark: ExchangeMark }) {
   );
 }
 
+/** The marks' artwork, read just after the page is up rather than with it: a mark keeps its place empty until then. */
+const [marks, setMarks] = createSignal<Record<ExchangeId, ExchangeMark>>();
+export const loadMarks = () =>
+  import('./exchange-marks').then((m) => {
+    setMarks(() => m.MARKS);
+    return m;
+  });
+
 /** Every mark is path data the engine draws too — one source of artwork. */
-const logo = (id: ExchangeId): Component<LogoProps> => (p) => <Paths size={p.size} mark={MARKS[id]} />;
+const logo = (id: ExchangeId): Component<LogoProps> => (p) => (
+  <Show when={marks()} fallback={<Mark size={p.size} viewBox="0 0 1 1" children={null} />}>
+    {(all) => <Paths size={p.size} mark={all()[id]} />}
+  </Show>
+);
 
 export const EXCHANGES: Record<ExchangeId, ExchangeDef> = {
   binance: { id: 'binance', name: 'Binance', live: true, Logo: logo('binance') },
@@ -59,6 +71,7 @@ export const EXCHANGES: Record<ExchangeId, ExchangeDef> = {
   deribit: { id: 'deribit', name: 'Deribit', live: true, Logo: logo('deribit') },
   coinbase: { id: 'coinbase', name: 'Coinbase', live: true, Logo: logo('coinbase') },
   bitstamp: { id: 'bitstamp', name: 'Bitstamp', live: true, Logo: logo('bitstamp') },
+  bingx: { id: 'bingx', name: 'BingX', live: true, Logo: logo('bingx') },
 };
 
 export const ALL_EXCHANGES: readonly ExchangeDef[] = Object.values(EXCHANGES);

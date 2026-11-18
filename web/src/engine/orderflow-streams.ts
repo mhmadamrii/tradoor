@@ -243,7 +243,7 @@ export function socketFor(venue: Venue, kind: FlowKind): string {
 export const bookFromRest = (venue: Venue): boolean => venue.startsWith('binance') || venue.startsWith('aster');
 
 /** Whether every message is the whole book, so what changed has to be worked out. */
-export const wholeBook = (venue: Venue): boolean => venue === 'hyperliquid-perp' || /^(gate|htx|bitstamp)-/.test(venue);
+export const wholeBook = (venue: Venue): boolean => venue === 'hyperliquid-perp' || /^(gate|htx|bitstamp|bingx)-/.test(venue);
 
 /** Where a venue whose book comes from REST keeps it. */
 export function depthUrl(venue: Venue, native: string): string {

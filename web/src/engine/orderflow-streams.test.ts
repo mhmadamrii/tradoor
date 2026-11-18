@@ -174,3 +174,14 @@ Deno.test('whole books are the ones that say everything every time', () => {
   for (const venue of ['hyperliquid-perp', 'gate-spot', 'gate-perp', 'htx-spot', 'htx-perp', 'bitstamp-spot', 'bitstamp-perp'] as const) assertEquals(wholeBook(venue), true, venue);
   for (const venue of ['binance-perp', 'aster-perp', 'bitfinex-spot', 'deribit-perp', 'coinbase-spot', 'okx-perp'] as const) assertEquals(wholeBook(venue), false, venue);
 });
+
+// Frames as BingX sent them on 2026-11-18.
+Deno.test('bingx: trades in a list or one at a time, m a sale; the whole book each time', () => {
+  assertEquals(readFrame('bingx-perp', { code: 0, dataType: 'BTC-USDT@trade', data: [{ t: '763380908', q: '0.0008', p: '64053.8', T: 1795006913084, m: true, s: 'BTC-USDT' }] }), [['BTC-USDT@trade', { kind: 'print', time: 1795006913084, price: 64053.8, qty: 0.0008, buy: false }]]);
+  assertEquals(readFrame('bingx-spot', { code: 0, data: { E: 1795007347321, T: 1795007347307, e: 'trade', m: false, p: '64047.03', q: '0.109742', s: 'BTC-USDT', t: '248479918' }, dataType: 'BTC-USDT@trade', success: true })[0]![1], { kind: 'print', time: 1795007347307, price: 64047.03, qty: 0.109742, buy: true });
+  assertEquals(readFrame('bingx-perp', { code: 0, dataType: 'BTC-USDT@depth100@100ms', ts: 1795008071658, data: { bids: [['64053.8', '29.0515']], asks: [['64053.9', '1.2']] } }), [['BTC-USDT@depth100@100ms', { kind: 'book', reset: true, bids: [[64053.8, 29.0515]], asks: [[64053.9, 1.2]] }]]);
+  assertEquals(readFrame('bingx-perp', { id: 'x', code: 0, msg: '', dataType: '', data: null }), []);
+  assertEquals(subscribeFrames('bingx-spot', 'book', 'BTC-USDT').frames, [{ id: 'BTC-USDT@depth100', reqType: 'sub', dataType: 'BTC-USDT@depth100' }]);
+  assertEquals(subscribeFrames('bingx-perp', 'prints', 'BTC-USDT').frames, [{ id: 'BTC-USDT@trade', reqType: 'sub', dataType: 'BTC-USDT@trade' }]);
+  assertEquals(wholeBook('bingx-perp'), true);
+});
