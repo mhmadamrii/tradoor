@@ -137,9 +137,9 @@ impl ChartEngine {
         self.chart.set_days(candles(time, open, high, low, close, &volume));
     }
 
-    /// A formula's lines, fills and marks from the formula module, a bar each of the chart's closed bars.
-    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64]) {
-        self.chart.set_formula(id, label, meta, values);
+    /// A formula's lines, fills and marks from the formula module, a bar each of the chart's closed bars, and with `live` the forming one.
+    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64], live: bool) {
+        self.chart.set_formula(id, label, meta, values, live);
     }
 
     /// The formulas still on the chart, comma-separated ids: the rest are let go.

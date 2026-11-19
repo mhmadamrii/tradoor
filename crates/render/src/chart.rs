@@ -1020,11 +1020,12 @@ impl Chart {
 
     /// A script's lines, fills, marks, shapes and table, as the formula module gave them
     /// (crates/frost-script-wasm): a part a line, tab-separated, whole numbers only, and the
-    /// values each part has after it, in the same order. Values for other bars than
-    /// these — the window moved since — are let go.
-    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64]) {
+    /// values each part has after it, in the same order. With `live`, worked out
+    /// over the forming bar too, one value more a series. Values for other bars
+    /// than these — the window moved since — are let go.
+    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64], live: bool) {
         use tradoor_core::studies::{ArtBox, ArtCell, ArtLabel, ArtLine, FormulaArt, StudyLine, StudyMarker, FORMULA_FILLS, FORMULA_LINES, FORMULA_MARKS};
-        let n = self.candles.len();
+        let n = self.candles.len() + usize::from(live);
         let place = self.formulas.iter().position(|s| s.id == id).unwrap_or(self.formulas.len());
         let mut study = ComputedStudy {
             id: id.to_string(),
@@ -5005,7 +5006,7 @@ mod tests {
         let meta = format!(
             "pane\t1\nplot\tline\t{blue}\t15\t0\t0\t0\tA\nplot\thistogram\t-\t15\t0\t0\t0\tB\nfill\t0\t1\t{blue}\nmark\t1\t{red}\tSell\nline\t{blue}\t20\t1\t2\nlabel\t{red}\t0\t0\t1\t0\tHH\x1f+2%\nbox\t{blue}\t{red}\t10\nbg\ntable\t2\t0\ncell\t1\t0\t{red}\t0\tAvg rise\n"
         );
-        c.set_formula("fx-abc:14", "Mine 14", &meta, &values);
+        c.set_formula("fx-abc:14", "Mine 14", &meta, &values, false);
         let study = c.formulas.iter().find(|s| s.id == "fx-abc:14").expect("kept");
         assert_eq!((study.group, study.lines.len(), study.fills.len(), study.markers.len()), (Group::Formula(0), 2, 1, 1));
         assert_eq!(study.lines[0].rgba, Some(blue));
@@ -5023,9 +5024,9 @@ mod tests {
         assert!(frame.texts.iter().any(|t| t.text == "Avg rise"), "the table");
         assert!(c.panes.iter().any(|p| p.group == Group::Formula(0)), "drawn below the chart");
         // Values for other bars than the chart's are let go; an error is said in the legend.
-        c.set_formula("fx-abc:14", "Mine 14", &meta, &values[..10]);
+        c.set_formula("fx-abc:14", "Mine 14", &meta, &values[..10], false);
         assert_eq!(c.formulas[0].lines.len(), 2, "the last good lines stand");
-        c.set_formula("fx-bad", "Bad", "error\t3\t5\tema(value, length)\n", &[]);
+        c.set_formula("fx-bad", "Bad", "error\t3\t5\tema(value, length)\n", &[], false);
         assert_eq!(c.formulas[1].stats, vec![("Error", "line 3: ema(value, length)".to_string())]);
         c.keep_formulas("fx-bad");
         assert!(c.formulas.iter().all(|s| s.id != "fx-abc:14"));
@@ -5038,7 +5039,7 @@ mod tests {
         let mut values: Vec<f64> = (0..n).map(|i| i as f64).collect();
         values.extend((0..n).map(|_| f64::from(0xffeb_3bff_u32)));
         let meta = "plot\tline\t4278190335\t15\t0\t26\t0\tLead\nbars\n";
-        c.set_formula("fx-lead", "Lead", meta, &values);
+        c.set_formula("fx-lead", "Lead", meta, &values, false);
         let study = &c.formulas[0];
         assert_eq!(study.lines[0].values.len(), n + 26, "on into the space ahead of the newest bar");
         assert_eq!((study.lines[0].values[25], study.lines[0].values[26]), (None, Some(0.0)));

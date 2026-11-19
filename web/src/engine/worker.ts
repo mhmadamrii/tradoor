@@ -106,6 +106,19 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 const againAt = (e: unknown): number =>
   (e as { until?: number } | null)?.until || (/answered (429|5\d\d)|timed out|abort|fetch|network|load failed/i.test(message(e)) ? Date.now() + 15_000 : 0);
 const EMPTY = new Float64Array(0);
+/** The least time between formula runs within one forming bar. */
+const FORMULA_MS = 250;
+
+/** The closed bars' columns with the forming bar after them. */
+function withBar(k: FormulaBars, b: Bar): FormulaBars {
+  const add = (c: Float64Array, v: number): Float64Array => {
+    const out = new Float64Array(c.length + 1);
+    out.set(c);
+    out[c.length] = v;
+    return out;
+  };
+  return { time: add(k.time, b.time), open: add(k.open, b.open), high: add(k.high, b.high), low: add(k.low, b.low), close: add(k.close, b.close), volume: add(k.volume, b.volume) };
+}
 /** An alert line's style as the engine reads it: see `set_alerts`. */
 const DASHES: Record<string, number> = { solid: 1, dashed: 2, dotted: 3 };
 const rgba = (color: string | undefined): number => {
@@ -257,6 +270,12 @@ class Slot {
   /** The reader's formulas on this chart, and the closed bars the engine last had, which they run over. */
   private formulas: FormulaRun[] = [];
   private formulaBars: FormulaBars | null = null;
+  /** The forming bar as the engine last had it, which formulas run over too. */
+  private liveBar: Bar | null = null;
+  /** When formulas last ran and how long they took: a tick within a bar runs them again after the longer of FORMULA_MS and four times that. */
+  private formulasAt = 0;
+  private formulaCost = 0;
+  private formulaTimer: ReturnType<typeof setTimeout> | undefined;
   /** The strategy tester's: its bars are handed to the page as they change, and its trades drawn as it says. */
   private watching = false;
   /** The formula ids its drawing goes under now. */
@@ -404,8 +423,8 @@ class Slot {
 
   /** What the strategy tester drew: its script's own drawing, and its trades on the price. */
   drawStrategy(own: StrategyDrawing | null, trades: StrategyDrawing | null): void {
-    if (own) this.engine.set_formula('bt', own.label, own.meta, own.values);
-    if (trades) this.engine.set_formula('bt-trades', trades.label, trades.meta, trades.values);
+    if (own) this.engine.set_formula('bt', own.label, own.meta, own.values, false);
+    if (trades) this.engine.set_formula('bt-trades', trades.label, trades.meta, trades.values, false);
     this.strategyIds = [...(own ? ['bt'] : []), ...(trades ? ['bt-trades'] : [])];
     this.keepFormulas();
     this.metaDirty = true;
@@ -431,22 +450,38 @@ class Slot {
     }
   }
 
-  /** Each formula over the closed bars the engine holds, its lines handed to it; the module loads with the first. */
+  /** Each formula over the closed bars the engine holds and the forming one, its lines handed to it; the module loads with the first. */
   private runFormulas(): void {
+    clearTimeout(this.formulaTimer);
+    this.formulaTimer = undefined;
     this.keepFormulas();
-    const bars = this.formulaBars;
-    if (this.formulas.length === 0 || !bars) return;
+    const closed = this.formulaBars;
+    if (this.formulas.length === 0 || !closed) return;
     const x = formulaModule();
     if (!x) {
       void formulaReady().then(() => this.runFormulas(), () => undefined);
       return;
     }
+    const n = closed.time.length;
+    const b = this.liveBar;
+    const live = b !== null && (n === 0 || b.time > closed.time[n - 1]!);
+    const bars = live ? withBar(closed, b) : closed;
+    const start = performance.now();
     for (const f of this.formulas) {
       const out = runFormula(x, f.source, f.inputs, bars, this.engine.precision());
-      if ('error' in out) this.engine.set_formula(f.id, f.label, out.error, EMPTY);
-      else this.engine.set_formula(f.id, f.label, out.meta, out.values);
+      if ('error' in out) this.engine.set_formula(f.id, f.label, out.error, EMPTY, false);
+      else this.engine.set_formula(f.id, f.label, out.meta, out.values, live);
     }
+    this.formulasAt = performance.now();
+    this.formulaCost = this.formulasAt - start;
     this.metaDirty = true;
+  }
+
+  /** The forming bar moved: formulas run over it again, but no more often than they can afford. */
+  private formulasDue(): void {
+    if (this.formulas.length === 0 || this.formulaTimer !== undefined) return;
+    const wait = this.formulasAt + Math.max(FORMULA_MS, 4 * this.formulaCost) - performance.now();
+    this.formulaTimer = setTimeout(() => this.runFormulas(), Math.max(0, wait));
   }
 
   private syncLevels(): void {
@@ -617,7 +652,7 @@ class Slot {
     this.closed = emptyCols();
     this.extra = [];
     this.takers.clear();
-    this.live = null;
+    this.live = this.liveBar = null;
     this.price = Number.NaN;
     this.markPrice();
     this.engine.clear_live();
@@ -800,11 +835,11 @@ class Slot {
     this.engine.set_days(days?.time ?? EMPTY, days?.open ?? EMPTY, days?.high ?? EMPTY, days?.low ?? EMPTY, days?.close ?? EMPTY);
     this.levels?.push();
     this.formulaBars = k;
-    this.runFormulas();
     if (this.watching) this.postBars(k);
     this.engine.set_message(k.time.length > 0 ? '' : this.replayAt === null ? 'No closed candles for this market and timeframe yet.' : 'No bars this far back on this market and timeframe.');
     this.candlesIn = true;
     this.pushLive();
+    this.runFormulas();
     this.metaDirty = true;
     if (this.live) this.setPrice(this.live.close);
     else if (k.time.length > 0) this.setPrice(k.close[k.time.length - 1]!);
@@ -970,10 +1005,13 @@ class Slot {
       const r = this.replayBar();
       if (r) this.engine.set_live(r.time, r.open, r.high, r.low, r.close, r.volume);
       else this.engine.clear_live();
-      return;
+      this.liveBar = r;
+    } else {
+      const b = this.live;
+      if (b && b.time > this.lastClosedTime()) this.engine.set_live(b.time, b.open, b.high, b.low, b.close, b.volume);
+      this.liveBar = b && b.time > this.lastClosedTime() ? b : null;
     }
-    const b = this.live;
-    if (b && b.time > this.lastClosedTime()) this.engine.set_live(b.time, b.open, b.high, b.low, b.close, b.volume);
+    this.formulasDue();
   }
 
   /** How many of the closed bars a replay has reached: those whole before its cursor. */
@@ -1043,6 +1081,7 @@ class Slot {
     this.engine.set_replay(at !== null);
     if (at === null) {
       this.engine.clear_live();
+      this.liveBar = null;
       if (was !== null && Number.isFinite(this.window)) this.window = this.rest = this.restWindow(info(this.timeframe));
     } else {
       // What came in on its own from now is not this chart's: the ones sliding up it now go too.
