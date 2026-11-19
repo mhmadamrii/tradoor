@@ -25,6 +25,12 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'ray', icon: 'ray', title: 'Horizontal ray — one click; the level runs on from where you put it' },
   { kind: 'vertical', icon: 'vertical', title: 'Vertical line — one click, drawn top to bottom' },
   { kind: 'cross', icon: 'cross', title: 'Crossline — one click; a level and a time through the point' },
+  { kind: 'regression', icon: 'regression', title: 'Regression trend — click the first time, then the last; fits the closes between, with bands two deviations out' },
+  { kind: 'flat', icon: 'flat', title: 'Flat top/bottom — click the two ends of the trendline, then the level' },
+  { kind: 'disjoint', icon: 'disjoint', title: 'Disjoint channel — click the two ends of the first line, then where the second starts' },
+  { kind: 'pitchfork', icon: 'pitchfork', title: 'Pitchfork — click the pivot, then the two swings after it' },
+  { kind: 'schiff', icon: 'schiff', title: 'Schiff pitchfork — click the pivot, then the two swings; starts halfway up the first swing' },
+  { kind: 'mschiff', icon: 'mschiff', title: 'Modified Schiff pitchfork — click the pivot, then the two swings; starts halfway along the first swing' },
   { kind: 'rect', icon: 'rect', title: 'Zone — click opposite corners' },
   { kind: 'rotrect', icon: 'rotrect', title: 'Rotated rectangle — click both ends of one side, then how far it reaches' },
   { kind: 'disk', icon: 'disk', title: 'Circle — click the centre, then a point on the edge' },
@@ -42,6 +48,14 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'brush', icon: 'brush', title: 'Brush — drag to draw freehand' },
   { kind: 'highlighter', icon: 'highlighter', title: 'Highlighter — drag to mark over the candles, wide and see-through' },
   { kind: 'arrow', icon: 'arrowline', title: 'Arrow — click where it starts, then where it points' },
+  { kind: 'marker', icon: 'marker', title: 'Arrow marker — click where it starts, then where it points; a thick arrow' },
+  { kind: 'markup', icon: 'markup', title: 'Arrow mark up — click under a bar' },
+  { kind: 'markdown', icon: 'markdown', title: 'Arrow mark down — click over a bar' },
+  { kind: 'callout', icon: 'callout', title: 'Callout — click what it is about, then where the note goes, then type it' },
+  { kind: 'pricenote', icon: 'pricenote', title: 'Price note — click the price, then where its tag goes' },
+  { kind: 'pricelabel', icon: 'pricelabel', title: 'Price label — one click; a tag reading the price there' },
+  { kind: 'pin', icon: 'pin', title: 'Pin — one click' },
+  { kind: 'flag', icon: 'flag', title: 'Flag — one click' },
 ];
 
 /** The tool's name with its Alt shortcut: `Trendline (Alt+T) — click the two ends…`. */
@@ -54,12 +68,13 @@ const toolTip = (t: { kind: string; title: string }): string => {
 
 /** The tools in groups, for the rail's buttons and a phone's sheet (DrawingSheet). */
 export const GROUPS: { name: string; kinds: string[] }[] = [
-  { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross', 'channel'] },
+  { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross', 'channel', 'regression', 'flat', 'disjoint'] },
+  { name: 'Pitchforks', kinds: ['pitchfork', 'schiff', 'mschiff'] },
   { name: 'Fibonacci', kinds: ['fib'] },
   { name: 'Brushes', kinds: ['brush', 'highlighter'] },
-  { name: 'Arrows', kinds: ['arrow'] },
+  { name: 'Arrows', kinds: ['arrow', 'marker', 'markup', 'markdown'] },
   { name: 'Shapes', kinds: ['rect', 'rotrect', 'path', 'disk', 'ellipse', 'triangle', 'arc', 'curve', 'dcurve'] },
-  { name: 'Text and notes', kinds: ['text'] },
+  { name: 'Text and notes', kinds: ['text', 'callout', 'pricenote', 'pricelabel', 'pin', 'flag'] },
   { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure'] },
 ];
 

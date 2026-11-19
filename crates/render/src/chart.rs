@@ -3042,7 +3042,39 @@ impl Chart {
         let last = self.candles.last().map(|c| c.close);
         // A lower pane's values read to two places, as its axis has them.
         let precision = if index == 0 { self.precision() } else { 2 };
-        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot })
+        let fit = if shape.kind == DrawingKind::Regression && shape.points.len() >= 2 { self.regression(shape, &pane.scale) } else { None };
+        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit })
+    }
+
+    /// The closes between a regression's two times fitted to a line, and the
+    /// bands two standard deviations of what is left either side, on screen.
+    fn regression(&self, shape: &DrawingShape, scale: &PriceScale) -> Option<[(f32, f32); 6]> {
+        let la = self.drawing_logical(shape, shape.points[0].time)?;
+        let lb = self.drawing_logical(shape, shape.points[1].time)?;
+        let (lo, hi) = (la.min(lb), la.max(lb));
+        let last = self.total_bars().checked_sub(1)? as f64;
+        let (i0, i1) = (lo.ceil().max(0.0) as usize, hi.floor().min(last) as usize);
+        if i1 <= i0 {
+            return None;
+        }
+        let (mut n, mut sx, mut sy, mut sxx, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for i in i0..=i1 {
+            let y = self.bar(i)?.close;
+            let x = i as f64;
+            n += 1.0;
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            sxy += x * y;
+        }
+        let den = n * sxx - sx * sx;
+        let slope = if den.abs() > f64::EPSILON { (n * sxy - sx * sy) / den } else { 0.0 };
+        let at = |x: f64| (sy - slope * sx) / n + slope * x;
+        let var = (i0..=i1).filter_map(|i| self.bar(i).map(|b| (b.close - at(i as f64)).powi(2))).sum::<f64>() / n;
+        let dev = 2.0 * var.sqrt();
+        let (xa, xb) = (self.time.x(la) as f32, self.time.x(lb) as f32);
+        let pt = |x: f32, logical: f64, off: f64| (x, scale.y(at(logical) + off) as f32);
+        Some([pt(xa, la, 0.0), pt(xb, lb, 0.0), pt(xa, la, dev), pt(xb, lb, dev), pt(xa, la, -dev), pt(xb, lb, -dev)])
     }
 
     // ------------------------------------------------------------------ legend
@@ -5370,6 +5402,47 @@ mod tests {
         assert_eq!(c.drawing_at(100.0, 121.0), Some(2), "along the crossline's level");
         assert_eq!(c.drawing_at(499.0, 400.0), Some(2), "and its time");
         assert_eq!(c.drawing_at(400.0, 300.0), None);
+    }
+
+    #[test]
+    fn a_regression_fits_the_closes_between_its_times() {
+        let mut c = chart();
+        let (a, b) = (c.anchor_at(150.0, 200.0).unwrap(), c.anchor_at(450.0, 200.0).unwrap());
+        c.set_drawings(vec![DrawingShape::new(Some(9), DrawingKind::Regression, vec![a, b])]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let f = placed.fit.expect("bars between its times");
+        assert!((f[0].0 - 150.0).abs() < 1.0 && (f[1].0 - 450.0).abs() < 1.0, "from its first time to its second: {f:?}");
+        // The bands either side of the line by the same distance on a linear scale.
+        assert!(((f[2].1 - f[0].1) + (f[4].1 - f[0].1)).abs() < 0.5 && f[2].1 < f[0].1, "{f:?}");
+        assert_eq!(c.drawing_at((f[0].0 + f[1].0) / 2.0, (f[0].1 + f[1].1) / 2.0), Some(9));
+    }
+
+    #[test]
+    fn a_pitchfork_runs_its_median_through_the_middle_of_its_swings() {
+        let mut c = chart();
+        let pts = vec![c.anchor_at(100.0, 300.0).unwrap(), c.anchor_at(200.0, 150.0).unwrap(), c.anchor_at(250.0, 250.0).unwrap()];
+        c.set_drawings(vec![DrawingShape::new(Some(3), DrawingKind::Pitchfork, pts)]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let (lines, band) = drawings::figure(&placed).unwrap();
+        let (p, q) = lines[0];
+        // The middle of the swings, (225, 200), sits on the median.
+        let t = (225.0 - p.0) / (q.0 - p.0);
+        assert!((p.1 + (q.1 - p.1) * t - 200.0).abs() < 1.0, "{lines:?}");
+        assert!((q.0 - placed.plot.right()).abs() < 1.0, "out to the plot's edge");
+        assert!(band.is_some());
+    }
+
+    #[test]
+    fn marks_are_caught_where_they_are_drawn_and_a_tag_reads_its_price() {
+        let mut c = chart();
+        let up = c.anchor_at(200.0, 300.0).unwrap();
+        let tag = c.anchor_at(400.0, 200.0).unwrap();
+        c.set_drawings(vec![DrawingShape::new(Some(1), DrawingKind::MarkUp, vec![up]), DrawingShape::new(Some(2), DrawingKind::PriceLabel, vec![tag])]);
+        assert_eq!(c.drawing_at(200.0, 315.0), Some(1), "the arrow sits under its bar");
+        assert_eq!(c.drawing_at(400.0, 188.0), Some(2), "the tag sits over its price");
+        assert_eq!(c.drawing_at(300.0, 250.0), None);
+        let price = format_price(tag.price, Some(c.precision()));
+        assert!(c.render(0).texts.iter().any(|t| t.text == price), "{price} on the tag");
     }
 
     #[test]

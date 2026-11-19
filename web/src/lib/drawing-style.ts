@@ -34,6 +34,12 @@ export function factoryStyle(kind: string): Style {
       // in a quiet grey, the stop a faint red: the price is what stands out.
       return { sizeBy: 'margin', margin: 100, leverage: 10, account: 1000, risk: 1, riskUnit: '%', lot: 1, profitLine: '#d1d4dc', stopLine: '#f2364566', profitFill: '#d1d4dc1a', stopFill: '#f236451a' };
     case 'channel':
+    case 'regression':
+    case 'flat':
+    case 'disjoint':
+    case 'pitchfork':
+    case 'schiff':
+    case 'mschiff':
       return { color: '#2962ff', width: 1, fillOn: true, fill: '#2962ff1f' };
     case 'fib':
       return { width: 1, fillOn: true, fill: '#2962ff14', extendRight: false };
@@ -55,6 +61,14 @@ export function factoryStyle(kind: string): Style {
       return { color: '#2962ff', width: 1.5 };
     case 'text':
       return { textColor: '#2962ff', textSize: 14 };
+    case 'callout':
+      return { color: '#2962ff', textSize: 13 };
+    case 'marker':
+    case 'pricelabel':
+    case 'pricenote':
+    case 'flag':
+    case 'pin':
+      return { color: '#2962ff', width: 1.5 };
     default:
       return {};
   }

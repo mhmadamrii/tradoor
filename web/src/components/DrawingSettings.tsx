@@ -35,7 +35,9 @@ type Tab = 'inputs' | 'style' | 'text' | 'coordinates' | 'visibility';
 
 const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve']);
 /** Closed shapes: a border and a background, as a zone has. */
-const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle']);
+/** Marks drawn in one colour. */
+const MARK_KINDS = new Set(['marker', 'markup', 'markdown', 'pricelabel', 'pricenote', 'pin', 'flag']);
+const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle', 'regression', 'flat', 'disjoint', 'pitchfork', 'schiff', 'mschiff']);
 
 export function DrawingSettings(props: {
   drawing: Drawing;
@@ -224,7 +226,12 @@ export function DrawingSettings(props: {
             <Check label="Always show stats" checked={flag('alwaysStats')} onChange={(v) => set('alwaysStats', v)} />
           </Show>
 
-          <Show when={kind === 'text'}>
+          <Show when={kind === 'callout'}>
+            <Row label="Box">
+              <ColorField value={str('color', '#2962ff')} onChange={(v) => set('color', v)} />
+            </Row>
+          </Show>
+          <Show when={kind === 'text' || kind === 'callout'}>
             <Row label="Text">
               <ColorField value={str('textColor', '#2962ff')} onChange={(v) => set('textColor', v)} />
               <SizeSelect value={num('textSize', 14)} onChange={(v) => set('textSize', v)} />
@@ -276,6 +283,11 @@ export function DrawingSettings(props: {
             <ExtendRow flag={flag} set={set} />
           </Show>
 
+          <Show when={MARK_KINDS.has(kind)}>
+            <Row label="Color">
+              <ColorField value={str('color', kind === 'markup' ? '#26a69a' : kind === 'markdown' ? '#ef5350' : '#2962ff')} onChange={(v) => set('color', v)} />
+            </Row>
+          </Show>
           <Show when={SHAPE_KINDS.has(kind)}>
             <Row label="Border">
               <LineField color={str('color', '#9c27b0')} width={num('width', 1)} dash={str('dash', 'solid') as Dash} set={set} />

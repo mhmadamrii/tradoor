@@ -35,6 +35,20 @@ export const KIND_NAMES: Record<string, string> = {
   arc: 'Arc',
   curve: 'Curve',
   dcurve: 'Double curve',
+  marker: 'Arrow marker',
+  markup: 'Arrow mark up',
+  markdown: 'Arrow mark down',
+  pricelabel: 'Price label',
+  pricenote: 'Price note',
+  callout: 'Callout',
+  flag: 'Flag',
+  pin: 'Pin',
+  regression: 'Regression trend',
+  flat: 'Flat top/bottom',
+  disjoint: 'Disjoint channel',
+  pitchfork: 'Pitchfork',
+  schiff: 'Schiff pitchfork',
+  mschiff: 'Modified Schiff pitchfork',
 };
 
 export const isPosition = (kind: string): boolean => kind === 'long' || kind === 'short';

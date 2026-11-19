@@ -46,10 +46,36 @@ pub enum DrawingKind {
     Curve,
     /// From one end to the other, bent towards a third point and then a fourth.
     DCurve,
+    /// The closes between two times fitted to a line, with bands two standard deviations out.
+    Regression,
+    /// A trendline and a level, the band between them.
+    Flat,
+    /// A trendline and a second line from a third point, its slope mirrored.
+    Disjoint,
+    /// A median line from a pivot through the middle of two swings, and a parallel through each.
+    Pitchfork,
+    /// A pitchfork from halfway up the pivot's swing.
+    Schiff,
+    /// A pitchfork from halfway along the pivot's swing.
+    ModSchiff,
+    /// A thick arrow from one point to another.
+    Marker,
+    /// An arrow under a bar, pointing up at it.
+    MarkUp,
+    /// An arrow over a bar, pointing down at it.
+    MarkDown,
+    /// The price at a point, in a tag pointing at it.
+    PriceLabel,
+    /// A line from a price out to a tag that reads it.
+    PriceNote,
+    /// A note in a box, with a line to what it is about.
+    Callout,
+    Flag,
+    Pin,
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 22] = [
+    pub const ALL: [DrawingKind; 36] = [
         Self::Path,
         Self::Brush,
         Self::Trendline,
@@ -72,6 +98,20 @@ impl DrawingKind {
         Self::Arc,
         Self::Curve,
         Self::DCurve,
+        Self::Regression,
+        Self::Flat,
+        Self::Disjoint,
+        Self::Pitchfork,
+        Self::Schiff,
+        Self::ModSchiff,
+        Self::Marker,
+        Self::MarkUp,
+        Self::MarkDown,
+        Self::PriceLabel,
+        Self::PriceNote,
+        Self::Callout,
+        Self::Flag,
+        Self::Pin,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -98,6 +138,20 @@ impl DrawingKind {
             Self::Arc => "arc",
             Self::Curve => "curve",
             Self::DCurve => "dcurve",
+            Self::Regression => "regression",
+            Self::Flat => "flat",
+            Self::Disjoint => "disjoint",
+            Self::Pitchfork => "pitchfork",
+            Self::Schiff => "schiff",
+            Self::ModSchiff => "mschiff",
+            Self::Marker => "marker",
+            Self::MarkUp => "markup",
+            Self::MarkDown => "markdown",
+            Self::PriceLabel => "pricelabel",
+            Self::PriceNote => "pricenote",
+            Self::Callout => "callout",
+            Self::Flag => "flag",
+            Self::Pin => "pin",
         }
     }
 
@@ -108,8 +162,8 @@ impl DrawingKind {
     /// Anchors the kind takes — the minimum for a path or brush.
     pub fn arity(self) -> usize {
         match self {
-            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle => 1,
-            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve => 3,
+            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin => 1,
+            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff => 3,
             Self::DCurve => 4,
             _ => 2,
         }
@@ -391,6 +445,8 @@ pub struct Placed<'a> {
     pub last: Option<f64>,
     /// The plot of the pane it stands in.
     pub plot: Rect,
+    /// A regression's fitted line and its bands, on screen: centre, upper and lower, each from its first time to its second.
+    pub fit: Option<[(f32, f32); 6]>,
 }
 
 impl Placed<'_> {
@@ -507,6 +563,45 @@ pub fn outline(kind: DrawingKind, p: &[(f32, f32)]) -> Option<(Vec<(f32, f32)>, 
             (pts, false)
         }
         _ => return None,
+    })
+}
+
+/// A channel's or a pitchfork's lines on screen, the main one first, and the
+/// band filled between its outer lines as four corners.
+pub type Figure = (Vec<((f32, f32), (f32, f32))>, Option<[(f32, f32); 4]>);
+
+pub fn figure(d: &Placed<'_>) -> Option<Figure> {
+    let p = &d.points;
+    let (a, b) = (*p.first()?, *p.get(1)?);
+    let kind = d.shape.kind;
+    if kind == DrawingKind::Regression {
+        let f = d.fit?;
+        return Some((vec![(f[0], f[1]), (f[2], f[3]), (f[4], f[5])], Some([f[2], f[3], f[5], f[4]])));
+    }
+    let c = *p.get(2)?;
+    Some(match kind {
+        DrawingKind::Flat => (vec![(a, b), ((a.0, c.1), (b.0, c.1))], Some([a, b, (b.0, c.1), (a.0, c.1)])),
+        DrawingKind::Disjoint => {
+            let end = (c.0 + (b.0 - a.0), c.1 - (b.1 - a.1));
+            (vec![(a, b), (c, end)], Some([a, b, end, c]))
+        }
+        _ => {
+            // Where the median starts: the pivot, or halfway up or along its swing.
+            let pivot = match kind {
+                DrawingKind::Schiff => (a.0, (a.1 + b.1) / 2.0),
+                DrawingKind::ModSchiff => mid(a, b),
+                _ => a,
+            };
+            let m = mid(b, c);
+            let (dx, dy) = (m.0 - pivot.0, m.1 - pivot.1);
+            // Out to the plot's right edge, or as far again as it came where it runs left.
+            let reach = |from: (f32, f32)| {
+                let t = if dx > 0.5 { ((d.plot.right() - from.0) / dx).max(1.0) } else { 2.0 };
+                (from.0 + dx * t, from.1 + dy * t)
+            };
+            let (eb, ec) = (reach(b), reach(c));
+            (vec![(pivot, reach(pivot)), (b, eb), (c, ec), (b, c)], Some([b, eb, ec, c]))
+        }
     })
 }
 
@@ -639,6 +734,34 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 arrow(frame, pair[0], pair[1], w, color);
             }
         }
+        // Marks at one point: an arrow at a bar, a flag, a pin, a price's tag.
+        (DrawingKind::MarkUp | DrawingKind::MarkDown | DrawingKind::Flag | DrawingKind::Pin | DrawingKind::PriceLabel, _, _) => {
+            let (x, y) = a;
+            match kind {
+                DrawingKind::MarkUp | DrawingKind::MarkDown => {
+                    let c = style.color.unwrap_or(if kind == DrawingKind::MarkUp { theme.bull } else { theme.bear });
+                    let s = if kind == DrawingKind::MarkUp { 1.0 } else { -1.0 };
+                    frame.triangle((x, y), (x - 8.0, y + 10.0 * s), (x + 8.0, y + 10.0 * s), c);
+                    frame.rect(x - 3.0, if s > 0.0 { y + 10.0 } else { y - 22.0 }, 6.0, 12.0, c);
+                }
+                DrawingKind::Flag => {
+                    stroke(frame, (x, y), (x, y - 26.0), 1.5, color, Dash::Solid);
+                    frame.triangle((x, y - 26.0), (x + 16.0, y - 21.0), (x, y - 16.0), color);
+                }
+                DrawingKind::Pin => {
+                    frame.triangle((x - 5.5, y - 13.0), (x + 5.5, y - 13.0), (x, y), color);
+                    frame.circle(x, y - 16.0, 7.0, color);
+                    frame.circle(x, y - 16.0, 2.5, theme.background);
+                }
+                _ => {
+                    frame.triangle((x - 5.0, y - 9.0), (x + 5.0, y - 9.0), (x, y - 2.0), color);
+                    frame.text(x, y - 9.0, format_price(prices[0], digits), color.contrast_text(), Align::Center, Baseline::Bottom, font, Some(color), Some(plot));
+                }
+            }
+            if let (Some(text), false) = (&d.shape.label, kind == DrawingKind::PriceLabel) {
+                label(frame, x + 12.0, y - 16.0, text.clone(), Align::Left, Baseline::Middle);
+            }
+        }
         // A level, a time, or both through one point.
         (DrawingKind::Horizontal | DrawingKind::Cross | DrawingKind::Vertical, _, _) => {
             if kind != DrawingKind::Vertical {
@@ -762,6 +885,49 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 stroke(frame, p, q, if main { width } else { width.min(1.5) }, c, if d.draft { Dash::Dashed } else { level.dash });
             }
             if let (Some(text), Some((p, q))) = (&d.shape.label, line(1.0)) {
+                label(frame, (p.0 + q.0) / 2.0, (p.1 + q.1) / 2.0 - 4.0, text.clone(), Align::Center, Baseline::Bottom);
+            }
+        }
+        (DrawingKind::Marker, Some(b), _) => {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len = dx.hypot(dy);
+            if len > 1.0 {
+                let (ux, uy) = (dx / len, dy / len);
+                let head = (10.0 + width * 2.0).min(len);
+                let half = 2.0 + width;
+                let base = (b.0 - ux * head, b.1 - uy * head);
+                let (nx, ny) = (-uy, ux);
+                let q = |p: (f32, f32), w: f32| ((p.0 + nx * w, p.1 + ny * w), (p.0 - nx * w, p.1 - ny * w));
+                let ((a1, a2), (b1, b2), (h1, h2)) = (q(a, half), q(base, half), q(base, head * 0.6));
+                frame.triangle(a1, a2, b1, color);
+                frame.triangle(b1, a2, b2, color);
+                frame.triangle(b, h1, h2, color);
+            }
+        }
+        (DrawingKind::PriceNote | DrawingKind::Callout, Some(b), _) => {
+            stroke(frame, a, b, width.min(1.5), color, dash);
+            frame.circle(a.0, a.1, 2.5, color);
+            if kind == DrawingKind::PriceNote {
+                frame.text(b.0, b.1, format_price(prices[0], digits), color.contrast_text(), Align::Center, Baseline::Middle, font, Some(color), Some(plot));
+            } else if let Some(text) = &d.shape.label {
+                // A line of the note each, stacked down from where the box was put.
+                let size = style.text_size.unwrap_or(font);
+                for (i, line) in text.split('\n').enumerate() {
+                    frame.text(b.0, b.1 + i as f32 * (size + 4.0), line, style.text_color.unwrap_or(color.contrast_text()), Align::Left, Baseline::Middle, size, Some(style.text_bg.unwrap_or(color)), Some(plot));
+                }
+            }
+        }
+        (DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff, Some(_), _) if figure(d).is_some() => {
+            let Some((lines, band)) = figure(d) else { return };
+            if let (Some(q), Some(fill)) = (band, fill) {
+                frame.triangle(q[0], q[1], q[2], fill);
+                frame.triangle(q[0], q[2], q[3], fill);
+            }
+            for (i, (p, q)) in lines.iter().enumerate() {
+                // The first is the main line; the rest are its guides, a touch lighter.
+                stroke(frame, *p, *q, if i == 0 { width } else { width.min(1.5) }, color, dash);
+            }
+            if let (Some(text), Some((p, q))) = (&d.shape.label, lines.first()) {
                 label(frame, (p.0 + q.0) / 2.0, (p.1 + q.1) / 2.0 - 4.0, text.clone(), Align::Center, Baseline::Bottom);
             }
         }
@@ -1064,6 +1230,31 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             }
             None => f32::INFINITY,
         },
+        DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff => match figure(d) {
+            Some((lines, band)) => {
+                let near = lines.iter().map(|(p, q)| distance_to_segment(cursor, *p, *q)).fold(f32::INFINITY, f32::min);
+                match band {
+                    Some(q) if style.fill_on.unwrap_or(true) && (inside_convex(&[q[0], q[1], q[2]], cursor) || inside_convex(&[q[0], q[2], q[3]], cursor)) => 0.0,
+                    _ => near,
+                }
+            }
+            None => f32::INFINITY,
+        },
+        DrawingKind::MarkUp | DrawingKind::MarkDown | DrawingKind::Flag | DrawingKind::Pin | DrawingKind::PriceLabel => {
+            let (x, y) = d.points[0];
+            let at = match kind {
+                DrawingKind::MarkUp => (x, y + 11.0),
+                DrawingKind::MarkDown => (x, y - 11.0),
+                DrawingKind::Flag => (x + 6.0, y - 18.0),
+                _ => (x, y - 14.0),
+            };
+            ((cursor.0 - at.0).hypot(cursor.1 - at.1) - 12.0).max(0.0)
+        }
+        DrawingKind::Marker | DrawingKind::PriceNote | DrawingKind::Callout if d.points.len() >= 2 => {
+            let (a, b) = (d.points[0], d.points[1]);
+            let tag = if kind == DrawingKind::Marker { f32::INFINITY } else { ((cursor.0 - b.0).hypot(cursor.1 - b.1) - 16.0).max(0.0) };
+            distance_to_segment(cursor, a, b).min(tag)
+        }
         DrawingKind::Vertical => (cursor.0 - d.points[0].0).abs(),
         DrawingKind::Cross => (cursor.0 - d.points[0].0).abs().min((cursor.1 - d.points[0].1).abs()),
         DrawingKind::Circle => ((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - CIRCLE_PX).max(0.0),

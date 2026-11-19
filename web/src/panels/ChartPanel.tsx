@@ -71,6 +71,20 @@ const TOOL_STEPS: Record<string, string> = {
   extended: 'Extended line: click two points on it · right-click or esc cancels',
   angle: 'Trend angle: click the first point, then the second · right-click or esc cancels',
   arrow: 'Arrow: click where it starts, then where it points · right-click or esc cancels',
+  marker: 'Arrow marker: click where it starts, then where it points · right-click or esc cancels',
+  markup: 'Arrow mark up: click under the bar',
+  markdown: 'Arrow mark down: click over the bar',
+  callout: 'Callout: click what it is about, then where the note goes · right-click or esc cancels',
+  pricenote: 'Price note: click the price, then where its tag goes · right-click or esc cancels',
+  pricelabel: 'Price label: click the price',
+  pin: 'Pin: click where it goes',
+  flag: 'Flag: click where it goes',
+  regression: 'Regression trend: click the first time, then the last · right-click or esc cancels',
+  flat: 'Flat top/bottom: click both ends of the trendline, then the level · right-click or esc cancels',
+  disjoint: 'Disjoint channel: click both ends of the first line, then where the second starts · right-click or esc cancels',
+  pitchfork: 'Pitchfork: click the pivot, then the two swings after it · right-click or esc cancels',
+  schiff: 'Schiff pitchfork: click the pivot, then the two swings after it · right-click or esc cancels',
+  mschiff: 'Modified Schiff pitchfork: click the pivot, then the two swings after it · right-click or esc cancels',
   rotrect: 'Rotated rectangle: click both ends of one side, then how far it reaches · right-click or esc cancels',
   disk: 'Circle: click the centre, then the edge · right-click or esc cancels',
   ellipse: 'Ellipse: click one corner of its box, then the opposite one · right-click or esc cancels',
@@ -1331,7 +1345,8 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
     switch (e.type) {
       case 'drawingCreated': {
         const { points, pane } = e;
-        if (e.kind === 'text') setOverlay({ kind: 'note', save: (label) => void createDrawing('text', points, label, pane) });
+        // A note and a callout ask for their words first.
+        if (e.kind === 'text' || e.kind === 'callout') setOverlay({ kind: 'note', save: (label) => void createDrawing(e.kind, points, label, pane) });
         // A preset (a ray, an extended line) is saved as its kind with the preset's look.
         else void createDrawing(e.kind, points, undefined, pane, engineKind(tool()) === e.kind ? tool() : e.kind);
         break;
