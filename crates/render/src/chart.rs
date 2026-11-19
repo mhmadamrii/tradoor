@@ -3251,8 +3251,44 @@ impl Chart {
         self.draw_pane = self.drawings.iter().find(|d| d.id == Some(id)).and_then(|d| self.pane_of(d)).unwrap_or(0);
         let Some(mut anchor) = self.point_at(x, y) else { return };
         let shift = self.shift;
+        // A channel's handles past its first line's ends work on screen, where its lines are parallel.
+        let channel = self.drawings.iter().find(|d| d.id == Some(id)).filter(|d| d.kind == DrawingKind::Channel && d.points.len() == 3 && (2..=4).contains(&index));
+        if let Some(placed) = channel.and_then(|d| self.place(d, false)) {
+            let (a, b) = (placed.points[0], placed.points[1]);
+            if index == 4 {
+                // The first line's middle: that line moves, parallel; the second stays.
+                self.move_points(id, &[0, 1], mid_point(a, b), (x, y));
+                return;
+            }
+            // An end of the second line: the channel's end moves along the first line to it, and the second line to its height.
+            let end = if index == 2 { a } else { b };
+            let along = if (b.0 - a.0).abs() > f32::EPSILON { a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0) } else { end.1 };
+            let Some(on_line) = self.anchor_in(self.draw_pane, x, along) else { return };
+            if let Some(shape) = self.drawings.iter_mut().find(|d| d.id == Some(id)) {
+                shape.points[index - 2] = on_line;
+                shape.points[2] = anchor;
+            }
+            self.touch();
+            return;
+        }
         if let Some(shape) = self.drawings.iter_mut().find(|d| d.id == Some(id)) {
-            if shape.kind.is_position() && shape.points.len() == 3 {
+            if shape.kind == DrawingKind::Rect && shape.points.len() >= 2 {
+                // Corners take both a time and a price; the sides' middles one of them.
+                let p = &mut shape.points;
+                match index {
+                    0 => p[0] = anchor,
+                    1 => p[1] = anchor,
+                    2 => (p[0].time, p[1].price) = (anchor.time, anchor.price),
+                    3 => (p[1].time, p[0].price) = (anchor.time, anchor.price),
+                    4 => p[0].time = anchor.time,
+                    5 => p[1].time = anchor.time,
+                    6 => p[0].price = anchor.price,
+                    _ => p[1].price = anchor.price,
+                }
+            } else if shape.kind == DrawingKind::Channel && index == 5 && shape.points.len() == 3 {
+                // The second line's middle sets how far it runs from the first.
+                shape.points[2] = anchor;
+            } else if shape.kind.is_position() && shape.points.len() == 3 {
                 // Left-edge handles set the three prices, the right one the width.
                 let p = &mut shape.points;
                 let mut left = p.iter().map(|a| a.time).fold(f64::INFINITY, f64::min);
@@ -3301,6 +3337,11 @@ impl Chart {
     /// Shift a whole drawing by a pointer move: along the bars, and by the same
     /// distance on the price axis — a ratio under a log scale.
     fn move_shape(&mut self, id: i64, from: (f32, f32), to: (f32, f32)) {
+        self.move_points(id, &[], from, to);
+    }
+
+    /// `move_shape` for some of a drawing's anchors only; none named moves them all.
+    fn move_points(&mut self, id: i64, only: &[usize], from: (f32, f32), to: (f32, f32)) {
         let Some(index) = self.drawings.iter().position(|d| d.id == Some(id)) else { return };
         let Some(pane) = self.pane_of(&self.drawings[index]).and_then(|p| self.panes.get(p)).copied() else { return };
         let bars = f64::from(to.0 - from.0) / self.time.bar_spacing;
@@ -3309,9 +3350,15 @@ impl Chart {
         let moved: Vec<Anchor> = self.drawings[index]
             .points
             .iter()
-            .map(|p| Anchor {
-                time: time_to_logical(&self.times, p.time).and_then(|l| logical_to_time(&self.times, l + bars)).unwrap_or(p.time),
-                price: scale.untransform(scale.transform(p.price) + rise),
+            .enumerate()
+            .map(|(i, p)| {
+                if !only.is_empty() && !only.contains(&i) {
+                    return *p;
+                }
+                Anchor {
+                    time: time_to_logical(&self.times, p.time).and_then(|l| logical_to_time(&self.times, l + bars)).unwrap_or(p.time),
+                    price: scale.untransform(scale.transform(p.price) + rise),
+                }
             })
             .collect();
         self.drawings[index].points = moved;
@@ -4029,6 +4076,10 @@ impl Chart {
 /// its centre, and the wick in CSS pixels: one pixel at any zoom, as on
 /// TradingView — a wick that thickens with the body reads as a second body.
 /// About how long a bar of `tf` lasts — a month as thirty days — to tell a longer timeframe from a shorter.
+fn mid_point(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
+    ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0)
+}
+
 fn bar_span(tf: ChartTimeframe) -> i64 {
     let Source { interval, group } = tf.source();
     interval.ms().unwrap_or(30 * DAY) * i64::from(group)
@@ -5274,8 +5325,10 @@ mod tests {
         c.set_drawings(vec![DrawingShape::new(Some(4), DrawingKind::Channel, vec![a, b, third])]);
         let placed = c.place(&c.drawings[0], false).unwrap();
         let handles = drawings::handles(&placed);
-        // The third handle rides the middle of the parallel line: 100px below the first.
-        assert!((handles[2].0 - 300.0).abs() < 1.0 && (handles[2].1 - 275.0).abs() < 1.0, "{handles:?}");
+        // Six handles; the last rides the middle of the parallel line: 100px below the first.
+        assert_eq!(handles.len(), 6);
+        assert!((handles[5].0 - 300.0).abs() < 1.0 && (handles[5].1 - 275.0).abs() < 1.0, "{handles:?}");
+        assert!((handles[2].0 - 200.0).abs() < 1.0 && (handles[2].1 - 300.0).abs() < 1.0, "the second line's left end: {handles:?}");
         assert_eq!(c.drawing_at(300.0, 230.0), Some(4), "inside the band");
         assert_eq!(c.drawing_at(300.0, 330.0), None, "outside it");
     }
@@ -5293,7 +5346,61 @@ mod tests {
         let placed = c.place(&c.drawings[0], false).unwrap();
         let handles = drawings::handles(&placed);
         // 100px below the main line at both ends, so its middle is at the third point.
-        assert!((handles[2].0 - 300.0).abs() < 0.5 && (handles[2].1 - 390.0).abs() < 0.5, "{handles:?}");
+        assert!((handles[5].0 - 300.0).abs() < 0.5 && (handles[5].1 - 390.0).abs() < 0.5, "{handles:?}");
+    }
+
+    #[test]
+    fn a_zone_has_eight_handles_and_a_side_moves_alone() {
+        let mut c = chart();
+        let a = c.anchor_at(200.0, 200.0).unwrap();
+        let b = c.anchor_at(400.0, 300.0).unwrap();
+        c.set_drawings(vec![DrawingShape::new(Some(6), DrawingKind::Rect, vec![a, b])]);
+        c.set_selected(Some(6));
+        let handles = drawings::handles(&c.place(&c.drawings[0], false).unwrap());
+        assert_eq!(handles.len(), 8);
+        assert!((handles[6].0 - 300.0).abs() < 1.0 && (handles[6].1 - 200.0).abs() < 1.0, "the top's middle: {handles:?}");
+        // The top's middle, dragged up: the top moves, the sides stay.
+        c.pointer_down(300.0, 200.0, 0);
+        c.pointer_move(330.0, 150.0);
+        c.pointer_up(330.0, 150.0);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let (p, q) = (placed.points[0], placed.points[1]);
+        assert!((p.1 - 150.0).abs() < 1.0 && (q.1 - 300.0).abs() < 1.0, "{p:?} {q:?}");
+        assert!((p.0 - 200.0).abs() < 1.0 && (q.0 - 400.0).abs() < 1.0, "{p:?} {q:?}");
+        // The bottom-left corner, dragged: the left side and the bottom.
+        c.pointer_down(200.0, 300.0, 0);
+        c.pointer_move(180.0, 340.0);
+        c.pointer_up(180.0, 340.0);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let (p, q) = (placed.points[0], placed.points[1]);
+        assert!((p.0 - 180.0).abs() < 6.0 && (q.1 - 340.0).abs() < 1.0 && (p.1 - 150.0).abs() < 1.0, "{p:?} {q:?}");
+    }
+
+    #[test]
+    fn a_channel_line_moves_by_its_middle_and_its_second_line_by_its_ends() {
+        let mut c = chart();
+        let a = c.anchor_at(200.0, 200.0).unwrap();
+        let b = c.anchor_at(400.0, 150.0).unwrap();
+        let third = c.anchor_at(300.0, 275.0).unwrap();
+        c.set_drawings(vec![DrawingShape::new(Some(4), DrawingKind::Channel, vec![a, b, third])]);
+        c.set_selected(Some(4));
+        // The first line's middle, dragged down 20px: that line moves, the second stays.
+        c.pointer_down(300.0, 175.0, 0);
+        c.pointer_move(300.0, 195.0);
+        c.pointer_up(300.0, 195.0);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let handles = drawings::handles(&placed);
+        assert!((handles[0].1 - 220.0).abs() < 1.0 && (handles[1].1 - 170.0).abs() < 1.0, "{handles:?}");
+        assert!((handles[5].1 - 275.0).abs() < 1.0, "the second line stays: {handles:?}");
+        // The second line's right end, dragged out to the right: the channel is longer, its slope the same.
+        c.pointer_down(handles[3].0, handles[3].1, 0);
+        c.pointer_move(450.0, handles[3].1);
+        c.pointer_up(450.0, handles[3].1);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let after = drawings::handles(&placed);
+        let slope = |p: (f32, f32), q: (f32, f32)| (q.1 - p.1) / (q.0 - p.0);
+        assert!((after[1].0 - handles[1].0 - 50.0).abs() < 6.0, "{after:?}");
+        assert!((slope(after[0], after[1]) - slope(handles[0], handles[1])).abs() < 0.02, "{after:?}");
     }
 
     #[test]

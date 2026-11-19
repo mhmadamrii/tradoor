@@ -1,14 +1,16 @@
 /**
- * The drawing tools down a chart's left edge: the tool armed, the magnet,
- * undo and redo, and the drawings' delete and clear. A workspace showing one
+ * The drawing tools down a chart's left edge: one button for each group of
+ * tools, showing the one last used, with the whole group a click on its corner
+ * away; the magnet, undo and redo, and the drawings' delete and clear. A workspace showing one
  * chart gives it its own; one showing several keeps a single rail at its left
  * for all of them, as TradingView does: the tool armed there draws on whichever
  * chart is clicked next, and the rest act on the chart in use.
  */
 import { createSignal, For, Show } from 'solid-js';
+import { useDismiss } from '../lib/dismiss';
 import { armedTool, cycleMagnet, magnet, setArmedTool, TOOL_KEYS, type ChartController, type MagnetMode } from '../app/ui';
 import { Icon, type IconName } from '../lib/icons';
-import { tlf } from '../lib/i18n';
+import { tl, tlf } from '../lib/i18n';
 import { readJson, readPref, writePref } from '../lib/prefs';
 
 export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
@@ -33,6 +35,36 @@ const toolTip = (t: { kind: string; title: string }): string => {
   if (!key) return t.title;
   const [name, ...rest] = t.title.split(' — ');
   return [`${name} (Alt+${key.slice(3)})`, ...rest].join(' — ');
+};
+
+/** The tools in groups, for the rail's buttons and a phone's sheet (DrawingSheet). */
+export const GROUPS: { name: string; kinds: string[] }[] = [
+  { name: 'Lines', kinds: ['trendline', 'ray', 'horizontal'] },
+  { name: 'Channels', kinds: ['channel'] },
+  { name: 'Fibonacci', kinds: ['fib'] },
+  { name: 'Shapes', kinds: ['rect', 'path'] },
+  { name: 'Brushes', kinds: ['brush'] },
+  { name: 'Text and notes', kinds: ['text'] },
+  { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure'] },
+];
+
+/** Each group's tool last picked, which its rail button shows and arms. */
+const savedShown = readJson('railShown');
+const [shown, setShown] = createSignal<Record<string, string>>(savedShown && typeof savedShown === 'object' ? (savedShown as Record<string, string>) : {});
+const shownIn = (g: { name: string; kinds: string[] }): string => {
+  const k = shown()[g.name];
+  return k && g.kinds.includes(k) ? k : (g.kinds[0] ?? '');
+};
+const showIn = (group: string, kind: string) => {
+  const next = { ...shown(), [group]: kind };
+  setShown(next);
+  writePref('railShown', JSON.stringify(next));
+};
+
+/** The tool's Alt shortcut, `Alt+T`, if it has one. */
+export const toolKey = (kind: string): string | undefined => {
+  const key = Object.entries(TOOL_KEYS).find(([, k]) => k === kind)?.[0];
+  return key ? `Alt+${key.slice(3)}` : undefined;
 };
 
 /** The tool's own name, the words before its description. */
@@ -60,22 +92,17 @@ export const MAGNET_TIP: Record<MagnetMode, string> = {
 
 /** `target`: the chart the undo, delete and clear act on — its own, or the one in use. */
 export function DrawingRail(props: { target: () => ChartController | undefined }) {
+  useDismiss(flyout, () => setFlyout(null));
+  /** This rail, so a chart's own rail and another's open their lists apart. */
+  const rail = {};
   const offline = () => props.target()?.offline() ?? null;
   const count = () => props.target()?.drawingCount() ?? 0;
   return (
     <div class="rail">
-      <For each={TOOLS}>
-        {(t) => (
-          <button
-            classList={{ on: armedTool() === t.kind }}
-            disabled={t.kind !== '' && offline() !== null}
-            data-tip={t.kind !== '' && offline() ? tlf('{0} — unavailable: drawings are saved on the tradoor server ({1})', t.title.split(' — ')[0], offline()) : toolTip(t)}
-            onClick={() => setArmedTool(armedTool() === t.kind ? '' : t.kind)}
-          >
-            <Icon name={t.icon} />
-          </button>
-        )}
-      </For>
+      <button classList={{ on: armedTool() === '' }} data-tip={toolTip(TOOLS[0]!)} onClick={() => setArmedTool('')}>
+        <Icon name="pointer" />
+      </button>
+      <For each={GROUPS}>{(g) => <RailGroup rail={rail} group={g} offline={offline} />}</For>
       <hr />
       <button class="magnet" classList={{ on: magnet() !== 'off', strong: magnet() === 'strong' }} data-tip={MAGNET_TIP[magnet()]} onClick={cycleMagnet}>
         <Icon name="magnet" />
@@ -101,6 +128,64 @@ export function DrawingRail(props: { target: () => ChartController | undefined }
       </button>
       <Show when={count() > 0}>
         <span class="count num">{count()}</span>
+      </Show>
+    </div>
+  );
+}
+
+/** The one group whose list is open, and where. */
+const [flyout, setFlyout] = createSignal<{ rail: object; group: string; x: number; y: number } | null>(null);
+
+/** A group's button: its tool last used, and on its corner the whole group in a list. */
+function RailGroup(props: { rail: object; group: { name: string; kinds: string[] }; offline: () => string | null }) {
+  const open = () => (flyout()?.group === props.group.name && flyout()?.rail === props.rail ? flyout() : null);
+  const setOpen = (v: { x: number; y: number } | null) => setFlyout(v && { rail: props.rail, group: props.group.name, ...v });
+  const kind = () => shownIn(props.group);
+  const tool = () => TOOLS.find((t) => t.kind === kind())!;
+  const pick = (k: string) => {
+    showIn(props.group.name, k);
+    setArmedTool(k);
+    setOpen(null);
+  };
+  let box!: HTMLDivElement;
+  return (
+    <div class="rgroup" ref={box}>
+      <button
+        classList={{ on: props.group.kinds.includes(armedTool()) }}
+        disabled={props.offline() !== null}
+        data-tip={props.offline() ? tlf('{0} — unavailable: drawings are saved on the tradoor server ({1})', toolName(kind()), props.offline()) : toolTip(tool())}
+        onClick={() => setArmedTool(armedTool() === kind() ? '' : kind())}
+      >
+        <Icon name={tool().icon} />
+      </button>
+      <Show when={props.group.kinds.length > 1}>
+        <button
+          class="rmore"
+          classList={{ open: open() !== null }}
+          aria-label={tlf('Every tool in {0}', tl(props.group.name))}
+          aria-expanded={open() !== null}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            const r = box.getBoundingClientRect();
+            setOpen(open() ? null : { x: r.right + 4, y: r.top });
+          }}
+        />
+      </Show>
+      <Show when={open()}>
+        {(at) => (
+          <div class="menu rflyout" style={{ left: `${at().x}px`, top: `${at().y}px` }} onPointerDown={(e) => e.stopPropagation()}>
+            <div class="cap">{tl(props.group.name)}</div>
+            <For each={props.group.kinds}>
+              {(k) => (
+                <button classList={{ cur: armedTool() === k }} disabled={props.offline() !== null} onClick={() => pick(k)}>
+                  <Icon name={TOOLS.find((t) => t.kind === k)!.icon} />
+                  <span class="grow">{tl(toolName(k))}</span>
+                  <Show when={toolKey(k)}>{(key) => <kbd>{key()}</kbd>}</Show>
+                </button>
+              )}
+            </For>
+          </div>
+        )}
       </Show>
     </div>
   );

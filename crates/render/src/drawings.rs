@@ -373,7 +373,9 @@ impl Placed<'_> {
 
 /// Where the grab handles sit. For most kinds these are the anchors; a position
 /// has handles on its left edge for the three prices and one on the right for
-/// its width, and a channel's third handle rides the middle of its second line.
+/// its width. A zone has eight: its corners, then the middle of each side, left,
+/// right, top and bottom as drawn from its two anchors. A channel has six: the
+/// ends of its first line, the ends of its second, then the middle of each line.
 pub fn handles(d: &Placed<'_>) -> Vec<(f32, f32)> {
     match d.shape.kind {
         DrawingKind::Brush => Vec::new(),
@@ -382,11 +384,32 @@ pub fn handles(d: &Placed<'_>) -> Vec<(f32, f32)> {
             None => d.points.clone(),
         },
         DrawingKind::Channel => match d.channel_line(1.0) {
-            Some((p, q)) => vec![d.points[0], d.points[1], ((p.0 + q.0) / 2.0, (p.1 + q.1) / 2.0)],
+            Some((p, q)) => {
+                let (a, b) = (d.points[0], d.points[1]);
+                vec![a, b, p, q, mid(a, b), mid(p, q)]
+            }
             None => d.points.clone(),
         },
+        DrawingKind::Rect if d.points.len() >= 2 => {
+            let (a, b) = (d.points[0], d.points[1]);
+            let (mx, my) = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+            vec![a, b, (a.0, b.1), (b.0, a.1), (a.0, my), (b.0, my), (mx, a.1), (mx, b.1)]
+        }
         _ => d.points.clone(),
     }
+}
+
+/// The handles drawn as squares: those that move a side or a whole line rather than a corner or an end.
+fn square_handle(kind: DrawingKind, i: usize) -> bool {
+    match kind {
+        DrawingKind::Rect => i >= 4,
+        DrawingKind::Channel => i >= 4,
+        _ => false,
+    }
+}
+
+fn mid(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
+    ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0)
 }
 
 /// A segment carried out to the plot's edges on the sides asked for.
@@ -627,9 +650,14 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
     }
 
     if d.selected {
-        for p in handles(d) {
-            frame.circle(p.0, p.1, 5.0, theme.drawing_selected);
-            frame.circle(p.0, p.1, 3.5, theme.handle);
+        for (i, p) in handles(d).into_iter().enumerate() {
+            if square_handle(d.shape.kind, i) {
+                frame.rect(p.0 - 4.5, p.1 - 4.5, 9.0, 9.0, theme.drawing_selected);
+                frame.rect(p.0 - 3.0, p.1 - 3.0, 6.0, 6.0, theme.handle);
+            } else {
+                frame.circle(p.0, p.1, 5.0, theme.drawing_selected);
+                frame.circle(p.0, p.1, 3.5, theme.handle);
+            }
         }
     }
 }

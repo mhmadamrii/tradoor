@@ -9,15 +9,9 @@ import { For, Show } from 'solid-js';
 import { armedTool, cycleMagnet, magnet, setArmedTool, type ChartController } from '../app/ui';
 import { tl, tlf } from '../lib/i18n';
 import { Icon } from '../lib/icons';
-import { drawFavs, favsOnChart, showFavsOnChart, toggleDrawFav, toolName, TOOLS } from '../panels/DrawingRail';
+import { drawFavs, favsOnChart, GROUPS, showFavsOnChart, toggleDrawFav, toolName, TOOLS } from '../panels/DrawingRail';
 import './drawing-sheet.css';
 
-const GROUPS: { name: string; kinds: string[] }[] = [
-  { name: 'Lines', kinds: ['trendline', 'horizontal', 'ray', 'path', 'channel'] },
-  { name: 'Zones and Fibonacci', kinds: ['rect', 'fib'] },
-  { name: 'Positions and measure', kinds: ['long', 'short', 'measure'] },
-  { name: 'Notes and freehand', kinds: ['text', 'brush'] },
-];
 
 const MAGNET_WORD = { off: 'Magnet off', weak: 'Weak magnet', strong: 'Strong magnet' } as const;
 
