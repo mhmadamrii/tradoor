@@ -5,7 +5,7 @@
  * fib's and a channel's levels included. What only the settings dialog needs
  * lives in drawing-options, so it loads with the dialog.
  */
-import { readJson } from './prefs';
+import { readJson, writePref } from './prefs';
 
 export type Style = Record<string, string | number | boolean>;
 
@@ -61,9 +61,39 @@ export function templates(): Record<string, Style> {
   return raw && typeof raw === 'object' ? (raw as Record<string, Style>) : {};
 }
 
-/** The style a new drawing of `kind` starts with: the saved default, else the factory one. */
+// ---------------------------------------------------------------- the last look
+
+/** What a drawing looks like, as against what it does: these carry from one
+ *  drawing to the next of its kind, and make a saved style. Extending a line,
+ *  its arrows, a position's size and the like stay with the drawing. */
+export const LOOK_KEYS = ['color', 'width', 'dash', 'fill', 'fillOn', 'textColor', 'textSize', 'textBg', 'levels', 'levelLabels', 'profitFill', 'stopFill', 'profitLine', 'stopLine'];
+
+export const lookOf = (style: Style): Style => Object.fromEntries(LOOK_KEYS.filter((k) => style[k] !== undefined).map((k) => [k, style[k]!]));
+
+const LOOK_KEY = 'drawingLastLook';
+
+export function lastLooks(): Record<string, Style> {
+  const raw = readJson(LOOK_KEY);
+  return raw && typeof raw === 'object' ? (raw as Record<string, Style>) : {};
+}
+
+/** A drawing restyled: the next one of its kind starts looking like it. */
+export function rememberLook(kind: string, style: Style): void {
+  const all = lastLooks();
+  all[kind] = lookOf(style);
+  writePref(LOOK_KEY, JSON.stringify(all));
+}
+
+export function forgetLook(kind: string): void {
+  const all = lastLooks();
+  delete all[kind];
+  writePref(LOOK_KEY, JSON.stringify(all));
+}
+
+/** The style a new drawing of `kind` starts with: the factory one, the saved
+ *  default over it, and over both the look of the last of its kind restyled. */
 export function defaultStyle(kind: string): Style {
-  return { ...factoryStyle(kind), ...(templates()[kind] ?? {}) };
+  return { ...factoryStyle(kind), ...(templates()[kind] ?? {}), ...(lastLooks()[engineKind(kind)] ?? {}) };
 }
 
 // ---------------------------------------------------------------- visibility

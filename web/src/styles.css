@@ -888,6 +888,23 @@ table.venues tr.off td { color: var(--dim); }
 .dtoolbar > button.del:hover { color: var(--bear); }
 .dtoolbar .swatchbtn { width: 22px; height: 22px; }
 .dtoolbar .dinput { height: 24px; }
+.dtoolbar .dstyles { position: relative; display: flex; }
+.dtoolbar .dstyles > button { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--muted); }
+.dtoolbar .dstyles > button:hover, .dtoolbar .dstyles > button.on { color: var(--primary); background: var(--surface-3); }
+.dtoolbar .dstyles > .menu { top: 30px; left: -60px; width: 230px; }
+/* A kind's saved styles (StyleMenu): a row each, and a name to save the look under. */
+.stylemenu { display: flex; flex-direction: column; padding: 2px 0; }
+.stylemenu .cap { padding: 6px 10px 3px; color: var(--dim); font-size: .625rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.stylemenu .none { margin: 0; padding: 4px 10px 6px; color: var(--dim); font-size: .6875rem; }
+.stylemenu .srow { display: flex; align-items: center; }
+.stylemenu .srow .sapply { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; }
+.stylemenu .srow .grow { overflow: hidden; text-overflow: ellipsis; }
+.stylemenu .srow .sdel { flex: none; width: 28px; justify-content: center; color: var(--dim); }
+.stylemenu .srow .sdel:hover { color: var(--bear); }
+.stylemenu .swatch-dot { flex: none; width: 10px; height: 10px; border: 1px solid var(--border); border-radius: 50%; }
+.stylemenu .ssave { display: flex; gap: 4px; padding: 6px 8px 4px; border-top: 1px solid var(--border); }
+.stylemenu .ssave input.box { flex: 1; min-width: 0; }
+.stylemenu .ssave .dbtn { flex: none; width: auto; justify-content: center; padding: 4px 10px; }
 /* A position's Inputs: rsalianto's trade form, one compact column; a sheet from the bottom on a phone. */
 .dsettings.wide { width: 500px; }
 /* An indicator's settings: on the page, not in a panel, so a small chart does not cut them off. */

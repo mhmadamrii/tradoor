@@ -13,7 +13,7 @@ import type { BacktestResult, ChartEvent, ChartStatus, DrawingPoint, Legend, Liv
 import type { BacktestState } from '../lib/backtest-state';
 import { api, catalog, errorText, type AlertStyle, type ChartKind, type Drawing, type Product } from '../lib/api';
 import type { DrawingPatch } from '../components/DrawingSettings';
-import { defaultStyle, engineKind, visibleOn, type Style } from '../lib/drawing-style';
+import { defaultStyle, engineKind, rememberLook, visibleOn, type Style } from '../lib/drawing-style';
 import { before, DrawingHistory, type DrawingChange, type DrawingRef, type Step } from '../lib/drawing-history';
 import { captureChart } from '../lib/capture';
 import { demoRate, forceFlatRenderer } from '../lib/demo';
@@ -1282,7 +1282,12 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
     const d = s === null ? undefined : drawings().find((x) => x.id === s);
     return d ?? null;
   };
-  const restyle = (d: Drawing, patch: Style) => void changeDrawing(d.id, { style: { ...d.style, ...patch } });
+  /** Restyled, a drawing sets how the next of its kind looks. */
+  const restyle = (d: Drawing, patch: Style) => {
+    const style = { ...d.style, ...patch };
+    rememberLook(d.kind, style);
+    void changeDrawing(d.id, { style });
+  };
 
   /** The settings dialog shows each change on the chart before it is saved. */
   const previewDrawing = (drawingId: number, patch: DrawingPatch) =>
@@ -1292,6 +1297,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
     setEditing(null);
     // A note cannot lose its text: an emptied one keeps what it had.
     const label = d.kind === 'text' && patch.label === null ? d.label : patch.label;
+    if (patch.style) rememberLook(d.kind, patch.style);
     // `d` is the drawing as the dialog opened on it: what undo goes back to.
     return changeDrawing(d.id, { style: patch.style, points: patch.points, label }, true, { style: d.style, points: d.points, label: d.label });
   }

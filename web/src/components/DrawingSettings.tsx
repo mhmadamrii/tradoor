@@ -2,6 +2,7 @@
  * One drawing's settings, in the tabs TradingView puts them under. Every change
  * shows on the chart at once; Ok saves it, Cancel puts the drawing back.
  */
+import { StyleMenu } from './StyleMenu';
 import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from 'solid-js';
 import type { DrawingPoint } from '../engine/protocol';
 import type { Drawing } from '../lib/api';
@@ -372,6 +373,8 @@ export function DrawingSettings(props: {
               >
                 {tl('Reset to factory')}
               </button>
+              <hr />
+              <StyleMenu kind={kind} style={style()} onApply={(s) => setStyle({ ...style(), ...s })} onDone={() => setTemplateMenu(null)} />
             </div>
           </Show>
         </div>

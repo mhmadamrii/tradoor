@@ -1,8 +1,8 @@
 /** What the drawing dialog and toolbar need beyond a drawing's style: names,
  *  the level tables (the same defaults the engine draws with), templates and
  *  visibility. Loaded with them, not with the chart. */
-import { writePref } from './prefs';
-import { hiddenUnits, TEMPLATE_KEY, templates, type Style } from './drawing-style';
+import { readJson, writePref } from './prefs';
+import { forgetLook, hiddenUnits, lookOf, TEMPLATE_KEY, templates, type Style } from './drawing-style';
 
 export interface Level {
   value: number;
@@ -88,6 +88,35 @@ export function resetDefaultStyle(kind: string): void {
   const all = templates();
   delete all[kind];
   writePref(TEMPLATE_KEY, JSON.stringify(all));
+  forgetLook(kind);
+}
+
+// ---------------------------------------------------------------- saved styles
+
+const STYLES_KEY = 'drawingStyles';
+export type SavedStyle = { name: string; style: Style };
+
+/** A kind's styles saved by name, the newest first. */
+export function savedStyles(kind: string): SavedStyle[] {
+  const raw = readJson(STYLES_KEY);
+  const list = raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[kind] : null;
+  return Array.isArray(list) ? list.filter((s): s is SavedStyle => !!s && typeof s.name === 'string' && !!s.style && typeof s.style === 'object') : [];
+}
+
+function writeStyles(kind: string, list: SavedStyle[]): void {
+  const raw = readJson(STYLES_KEY);
+  const all = raw && typeof raw === 'object' ? (raw as Record<string, SavedStyle[]>) : {};
+  all[kind] = list;
+  writePref(STYLES_KEY, JSON.stringify(all));
+}
+
+/** Saved under a name already used, it takes that one's place. */
+export function saveStyle(kind: string, name: string, style: Style): void {
+  writeStyles(kind, [{ name, style: lookOf(style) }, ...savedStyles(kind).filter((s) => s.name !== name)]);
+}
+
+export function deleteStyle(kind: string, name: string): void {
+  writeStyles(kind, savedStyles(kind).filter((s) => s.name !== name));
 }
 
 /** Timeframe families a drawing can be hidden on, by the timeframe's unit letter. */
