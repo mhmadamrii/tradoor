@@ -26,6 +26,13 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'vertical', icon: 'vertical', title: 'Vertical line — one click, drawn top to bottom' },
   { kind: 'cross', icon: 'cross', title: 'Crossline — one click; a level and a time through the point' },
   { kind: 'rect', icon: 'rect', title: 'Zone — click opposite corners' },
+  { kind: 'rotrect', icon: 'rotrect', title: 'Rotated rectangle — click both ends of one side, then how far it reaches' },
+  { kind: 'disk', icon: 'disk', title: 'Circle — click the centre, then a point on the edge' },
+  { kind: 'ellipse', icon: 'ellipse', title: 'Ellipse — click opposite corners of the box it fills' },
+  { kind: 'triangle', icon: 'triangle', title: 'Triangle — click its three corners' },
+  { kind: 'arc', icon: 'arc', title: 'Arc — click both ends, then a point it passes through' },
+  { kind: 'curve', icon: 'curve', title: 'Curve — click both ends, then where it bends towards' },
+  { kind: 'dcurve', icon: 'dcurve', title: 'Double curve — click both ends, then its two bends' },
   { kind: 'channel', icon: 'channel', title: 'Parallel channel — click the two ends of one line, then where the parallel line runs' },
   { kind: 'fib', icon: 'fib', title: 'Fib retracement — click the 100% end first, then the 0% end' },
   { kind: 'text', icon: 'text', title: 'Note — click where it goes, then type it' },
@@ -47,12 +54,11 @@ const toolTip = (t: { kind: string; title: string }): string => {
 
 /** The tools in groups, for the rail's buttons and a phone's sheet (DrawingSheet). */
 export const GROUPS: { name: string; kinds: string[] }[] = [
-  { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross'] },
-  { name: 'Channels', kinds: ['channel'] },
+  { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross', 'channel'] },
   { name: 'Fibonacci', kinds: ['fib'] },
   { name: 'Brushes', kinds: ['brush', 'highlighter'] },
   { name: 'Arrows', kinds: ['arrow'] },
-  { name: 'Shapes', kinds: ['rect', 'path'] },
+  { name: 'Shapes', kinds: ['rect', 'rotrect', 'path', 'disk', 'ellipse', 'triangle', 'arc', 'curve', 'dcurve'] },
   { name: 'Text and notes', kinds: ['text'] },
   { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure'] },
 ];
@@ -112,6 +118,16 @@ export function DrawingRail(props: { target: () => ChartController | undefined }
         <Icon name="pointer" />
       </button>
       <For each={GROUPS}>{(g) => <RailGroup rail={rail} group={g} offline={offline} />}</For>
+      <hr />
+      <button
+        class="favs"
+        classList={{ on: favsOnChart() }}
+        aria-pressed={favsOnChart()}
+        data-tip={favsOnChart() ? 'Hide the favourites bar' : 'Show the favourites bar — star tools in the lists to put them in it'}
+        onClick={() => showFavsOnChart(!favsOnChart())}
+      >
+        <Icon name="star" fill={favsOnChart()} />
+      </button>
       <hr />
       <button class="magnet" classList={{ on: magnet() !== 'off', strong: magnet() === 'strong' }} data-tip={MAGNET_TIP[magnet()]} onClick={cycleMagnet}>
         <Icon name="magnet" />
@@ -176,7 +192,9 @@ function RailGroup(props: { rail: object; group: { name: string; kinds: string[]
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => {
             const r = box.getBoundingClientRect();
-            setOpen(open() ? null : { x: r.right + 4, y: r.top });
+            // Beside its button, lifted where a long list would run off the bottom.
+            const rows = props.group.kinds.length;
+            setOpen(open() ? null : { x: r.right + 4, y: Math.max(8, Math.min(r.top, innerHeight - (rows * 31 + 74) - 8)) });
           }}
         />
       </Show>
@@ -186,16 +204,65 @@ function RailGroup(props: { rail: object; group: { name: string; kinds: string[]
             <div class="cap">{tl(props.group.name)}</div>
             <For each={props.group.kinds}>
               {(k) => (
-                <button classList={{ cur: armedTool() === k }} disabled={props.offline() !== null} onClick={() => pick(k)}>
-                  <Icon name={TOOLS.find((t) => t.kind === k)!.icon} />
-                  <span class="grow">{tl(toolName(k))}</span>
-                  <Show when={toolKey(k)}>{(key) => <kbd>{key()}</kbd>}</Show>
-                </button>
+                <div class="rrow">
+                  <button classList={{ cur: armedTool() === k }} disabled={props.offline() !== null} onClick={() => pick(k)}>
+                    <Icon name={TOOLS.find((t) => t.kind === k)!.icon} />
+                    <span class="grow">{tl(toolName(k))}</span>
+                    <Show when={toolKey(k)}>{(key) => <kbd>{key()}</kbd>}</Show>
+                  </button>
+                  <button class="rstar" classList={{ on: drawFavs().includes(k) }} aria-pressed={drawFavs().includes(k)} aria-label={tlf('Favourite: {0}', tl(toolName(k)))} onClick={() => toggleDrawFav(k)}>
+                    <Icon name="star" size={12} stroke={2} fill={drawFavs().includes(k)} />
+                  </button>
+                </div>
               )}
             </For>
+            <label class="rfavs">
+              <input type="checkbox" checked={favsOnChart()} onChange={(e) => showFavsOnChart(e.currentTarget.checked)} />
+              {tl('Favourites bar over the chart')}
+            </label>
           </div>
         )}
       </Show>
+    </div>
+  );
+}
+
+/** Where the favourites bar was left, from the window's top left. */
+const savedAt = readJson('favBarAt');
+const [barAt, setBarAt] = createSignal<{ x: number; y: number }>(
+  savedAt && typeof savedAt === 'object' && Number.isFinite((savedAt as { x: number }).x) ? (savedAt as { x: number; y: number }) : { x: 420, y: 72 },
+);
+
+/** A wide screen's starred tools in a small bar over the chart, dragged by its
+ *  grip wherever it is out of the way; a phone keeps them in its bottom bar. */
+export function FavBar() {
+  let bar!: HTMLDivElement;
+  const clamp = (p: { x: number; y: number }) => ({ x: Math.min(Math.max(0, p.x), innerWidth - (bar?.offsetWidth ?? 120)), y: Math.min(Math.max(0, p.y), innerHeight - (bar?.offsetHeight ?? 34)) });
+  const grab = (e: PointerEvent) => {
+    e.preventDefault();
+    const from = { x: e.clientX - barAt().x, y: e.clientY - barAt().y };
+    const move = (m: PointerEvent) => setBarAt(clamp({ x: m.clientX - from.x, y: m.clientY - from.y }));
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      writePref('favBarAt', JSON.stringify(barAt()));
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  };
+  return (
+    <div class="favbar" ref={bar} style={{ left: `${clamp(barAt()).x}px`, top: `${clamp(barAt()).y}px` }} onPointerDown={(e) => e.stopPropagation()}>
+      <span class="grip" aria-hidden="true" onPointerDown={grab} />
+      <For each={drawFavs()}>
+        {(k) => (
+          <button classList={{ on: armedTool() === k }} data-tip={toolTip(TOOLS.find((t) => t.kind === k)!)} onClick={() => setArmedTool(armedTool() === k ? '' : k)}>
+            <Icon name={TOOLS.find((t) => t.kind === k)!.icon} size={16} />
+          </button>
+        )}
+      </For>
+      <button class="fx" aria-label={tl('Hide the favourites bar')} data-tip="Hide the favourites bar — the rail's lists show it again" onClick={() => showFavsOnChart(false)}>
+        <Icon name="close" size={11} />
+      </button>
     </div>
   );
 }

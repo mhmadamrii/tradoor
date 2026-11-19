@@ -515,12 +515,26 @@ input.box:focus { border-color: var(--primary); outline: 0; }
 .rail .rgroup .rmore::after { content: ''; position: absolute; right: 3px; bottom: 3px; border-style: solid; border-width: 0 0 4px 4px; border-color: transparent transparent var(--dim) transparent; }
 .rail .rgroup .rmore:hover::after, .rail .rgroup .rmore.open::after { border-bottom-color: var(--primary); }
 .rail .rgroup .rmore:hover { background: none; }
-.menu.rflyout { position: fixed; z-index: 60; min-width: 220px; padding: 4px 0; }
+.menu.rflyout { position: fixed; z-index: 60; min-width: 220px; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); padding: 4px 0; overflow-y: auto; }
 .rflyout .cap { padding: 6px 12px 4px; color: var(--dim); font-size: .625rem; letter-spacing: 0.14em; text-transform: uppercase; }
 .rflyout button { justify-content: flex-start; gap: 10px; padding: 6px 12px; font-size: .75rem; }
 .rflyout button svg { flex: none; width: 18px; height: 18px; }
 .rflyout button .grow { flex: 1; }
 .rflyout kbd { color: var(--dim); font-size: .625rem; }
+.rflyout .rrow { display: flex; align-items: center; }
+.rflyout .rrow > button:first-child { flex: 1; min-width: 0; }
+.rflyout .rrow .rstar { flex: none; width: 30px; justify-content: center; padding: 6px 0; color: var(--dim); }
+.rflyout .rrow .rstar.on, .rflyout .rrow .rstar.on:hover { color: #f5b301; background: none; }
+.rflyout .rrow .rstar:hover { background: none; color: #f5b301; }
+.rflyout .rfavs { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 12px 5px; border-top: 1px solid var(--border); color: var(--muted); font-size: .6875rem; }
+/* The starred tools over the chart (FavBar), on a wide screen only. */
+.favbar { position: fixed; z-index: 30; display: flex; align-items: center; gap: 1px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: 0 6px 20px #0008; }
+.favbar .grip { width: 10px; height: 26px; margin: 0 2px; cursor: grab; touch-action: none; background: radial-gradient(circle, var(--dim) 1px, transparent 1.5px) 0 0 / 5px 5px; }
+.favbar .grip:active { cursor: grabbing; }
+.favbar button { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; color: var(--muted); }
+.favbar button:hover { color: var(--primary); background: var(--surface-3); }
+.favbar button.on { background: var(--primary); color: var(--bg); }
+.favbar .fx { width: 20px; color: var(--dim); }
 .canvasbox { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .canvasbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .legend { position: absolute; top: 4px; left: 6px; z-index: 5; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: calc(100% - 90px); pointer-events: none; font-size: .6875rem; }
@@ -1009,6 +1023,7 @@ table.venues tr.off td { color: var(--dim); }
 /* The drawing magnet: lit when on, and marked when strong. */
 .rail button.magnet.on { background: color-mix(in oklab, var(--primary) 22%, transparent); color: var(--primary); }
 .rail button.magnet.strong { background: var(--primary); color: var(--bg); }
+.rail button.favs.on { background: none; color: #f5b301; }
 
 /* The app's tooltips (lib/tooltip.ts), in place of the browser's. */
 .tip {

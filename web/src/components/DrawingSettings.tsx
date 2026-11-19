@@ -33,7 +33,9 @@ export interface DrawingPatch {
 
 type Tab = 'inputs' | 'style' | 'text' | 'coordinates' | 'visibility';
 
-const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush']);
+const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve']);
+/** Closed shapes: a border and a background, as a zone has. */
+const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle']);
 
 export function DrawingSettings(props: {
   drawing: Drawing;
@@ -272,6 +274,16 @@ export function DrawingSettings(props: {
             </Row>
             <Check label="Middle line" checked={flag('middle')} onChange={(v) => set('middle', v)} />
             <ExtendRow flag={flag} set={set} />
+          </Show>
+
+          <Show when={SHAPE_KINDS.has(kind)}>
+            <Row label="Border">
+              <LineField color={str('color', '#9c27b0')} width={num('width', 1)} dash={str('dash', 'solid') as Dash} set={set} />
+            </Row>
+            <Row label="Background">
+              <input type="checkbox" checked={flag('fillOn', true)} onChange={(e) => set('fillOn', e.currentTarget.checked)} />
+              <ColorField value={str('fill', '#9c27b033')} onChange={(v) => set('fill', v)} />
+            </Row>
           </Show>
 
           <Show when={kind === 'measure'}>

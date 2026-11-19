@@ -38,7 +38,15 @@ export function factoryStyle(kind: string): Style {
     case 'fib':
       return { width: 1, fillOn: true, fill: '#2962ff14', extendRight: false };
     case 'rect':
+    case 'rotrect':
+    case 'disk':
+    case 'ellipse':
+    case 'triangle':
       return { color: '#9c27b0', width: 1, fillOn: true, fill: '#9c27b033' };
+    case 'arc':
+    case 'curve':
+    case 'dcurve':
+      return { color: '#2962ff', width: 1.5 };
     case 'trendline':
     case 'ray':
     case 'horizontal':

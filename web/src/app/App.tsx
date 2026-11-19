@@ -3,6 +3,7 @@
  * Keyboard shortcuts go to the focused panel.
  */
 import { Brand } from '../components/Brand';
+import { drawFavs, FavBar, favsOnChart } from '../panels/DrawingRail';
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { lazy } from '../lib/lazy';
 import type { Command } from '../components/CommandPalette';
@@ -596,6 +597,10 @@ export function App() {
         </Show>
       </main>
       <StatusBar />
+      {/* A phone has its starred tools in the chart's bottom bar instead. */}
+      <Show when={!mobile() && favsOnChart() && drawFavs().length > 0}>
+        <FavBar />
+      </Show>
       <Overlays />
       {/* Keyed: opened again on another formula, it starts over on that one. */}
       <Show when={editing()} keyed>

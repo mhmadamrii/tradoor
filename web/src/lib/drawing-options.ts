@@ -28,6 +28,13 @@ export const KIND_NAMES: Record<string, string> = {
   long: 'Long position',
   short: 'Short position',
   channel: 'Parallel channel',
+  rotrect: 'Rotated rectangle',
+  disk: 'Circle',
+  ellipse: 'Ellipse',
+  triangle: 'Triangle',
+  arc: 'Arc',
+  curve: 'Curve',
+  dcurve: 'Double curve',
 };
 
 export const isPosition = (kind: string): boolean => kind === 'long' || kind === 'short';

@@ -310,6 +310,32 @@ impl Frame {
         }
     }
 
+    /// A stroke as one band, each stretch of it meeting the next edge to edge:
+    /// no piece laid over another, so a see-through colour (a highlighter's)
+    /// is as even along it as across it.
+    pub fn ribbon(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
+        let n = points.len();
+        if n < 2 {
+            return;
+        }
+        let half = width / 2.0;
+        let edge = |i: usize| {
+            let (p, q) = (points[i.saturating_sub(1)], points[(i + 1).min(n - 1)]);
+            let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+            let len = dx.hypot(dy).max(f32::EPSILON);
+            let (nx, ny) = (-dy / len * half, dx / len * half);
+            let c = points[i];
+            ((c.0 + nx, c.1 + ny), (c.0 - nx, c.1 - ny))
+        };
+        let mut last = edge(0);
+        for i in 1..n {
+            let next = edge(i);
+            self.triangle(last.0, last.1, next.0, color);
+            self.triangle(next.0, last.1, next.1, color);
+            last = next;
+        }
+    }
+
     /// A band between two lines sampled at the same x positions.
     /// A line through `points`, its dashes running on across the corners: bars
     /// closer together than a dash would otherwise draw it solid.

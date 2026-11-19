@@ -33,11 +33,46 @@ pub enum DrawingKind {
     /// A ring around one point, its label inside: a swing marked, as the
     /// Signal panel marks a pattern's drives.
     Circle,
+    /// A circle from its centre out to a point on it.
+    Disk,
+    /// An ellipse in the box of two opposite corners.
+    Ellipse,
+    Triangle,
+    /// A rectangle along any slope: one side's two ends, then how far it reaches.
+    RotRect,
+    /// From one end to the other through a third point.
+    Arc,
+    /// From one end to the other, bent towards a third point.
+    Curve,
+    /// From one end to the other, bent towards a third point and then a fourth.
+    DCurve,
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 15] =
-        [Self::Path, Self::Brush, Self::Trendline, Self::Horizontal, Self::Vertical, Self::Cross, Self::Ray, Self::Rect, Self::Fib, Self::Text, Self::Measure, Self::Long, Self::Short, Self::Channel, Self::Circle];
+    pub const ALL: [DrawingKind; 22] = [
+        Self::Path,
+        Self::Brush,
+        Self::Trendline,
+        Self::Horizontal,
+        Self::Vertical,
+        Self::Cross,
+        Self::Ray,
+        Self::Rect,
+        Self::Fib,
+        Self::Text,
+        Self::Measure,
+        Self::Long,
+        Self::Short,
+        Self::Channel,
+        Self::Circle,
+        Self::Disk,
+        Self::Ellipse,
+        Self::Triangle,
+        Self::RotRect,
+        Self::Arc,
+        Self::Curve,
+        Self::DCurve,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -56,6 +91,13 @@ impl DrawingKind {
             Self::Short => "short",
             Self::Channel => "channel",
             Self::Circle => "circle",
+            Self::Disk => "disk",
+            Self::Ellipse => "ellipse",
+            Self::Triangle => "triangle",
+            Self::RotRect => "rotrect",
+            Self::Arc => "arc",
+            Self::Curve => "curve",
+            Self::DCurve => "dcurve",
         }
     }
 
@@ -67,7 +109,8 @@ impl DrawingKind {
     pub fn arity(self) -> usize {
         match self {
             Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle => 1,
-            Self::Long | Self::Short | Self::Channel => 3,
+            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve => 3,
+            Self::DCurve => 4,
             _ => 2,
         }
     }
@@ -408,6 +451,83 @@ pub fn handles(d: &Placed<'_>) -> Vec<(f32, f32)> {
     }
 }
 
+/// Steps around a circle: the turn of one step, as its cosine and sine, so a
+/// round shape is traced by rotating rather than by the library's sin and cos.
+const ROUND_STEPS: usize = 48;
+const STEP_COS: f32 = 0.991_444_86;
+const STEP_SIN: f32 = 0.130_526_19;
+
+/// The points a shape is drawn through on screen, and whether it closes back on
+/// its first: a circle and an ellipse traced around, a triangle and a turned
+/// rectangle by their corners, an arc and the curves sampled along.
+pub fn outline(kind: DrawingKind, p: &[(f32, f32)]) -> Option<(Vec<(f32, f32)>, bool)> {
+    let (a, b) = (*p.first()?, *p.get(1)?);
+    let round = |c: (f32, f32), rx: f32, ry: f32| {
+        let (mut x, mut y) = (1.0f32, 0.0f32);
+        let mut pts = Vec::with_capacity(ROUND_STEPS);
+        for _ in 0..ROUND_STEPS {
+            pts.push((c.0 + x * rx, c.1 + y * ry));
+            (x, y) = (x * STEP_COS - y * STEP_SIN, x * STEP_SIN + y * STEP_COS);
+        }
+        pts
+    };
+    let sample = |f: &dyn Fn(f32) -> (f32, f32)| (0..=32).map(|i| f(i as f32 / 32.0)).collect::<Vec<_>>();
+    Some(match kind {
+        DrawingKind::Disk => {
+            let r = (b.0 - a.0).hypot(b.1 - a.1);
+            (round(a, r, r), true)
+        }
+        DrawingKind::Ellipse => (round(mid(a, b), (b.0 - a.0).abs() / 2.0, (b.1 - a.1).abs() / 2.0), true),
+        DrawingKind::Triangle => (vec![a, b, *p.get(2)?], true),
+        DrawingKind::RotRect => {
+            let c = *p.get(2)?;
+            let len = (b.0 - a.0).hypot(b.1 - a.1);
+            if len < f32::EPSILON {
+                return None;
+            }
+            let n = (-(b.1 - a.1) / len, (b.0 - a.0) / len);
+            let h = (c.0 - a.0) * n.0 + (c.1 - a.1) * n.1;
+            (vec![a, b, (b.0 + n.0 * h, b.1 + n.1 * h), (a.0 + n.0 * h, a.1 + n.1 * h)], true)
+        }
+        DrawingKind::Arc | DrawingKind::Curve | DrawingKind::DCurve => {
+            let c = *p.get(2)?;
+            // An arc passes through its third point halfway; a curve only leans towards it.
+            let k = if kind == DrawingKind::Arc { (2.0 * c.0 - (a.0 + b.0) / 2.0, 2.0 * c.1 - (a.1 + b.1) / 2.0) } else { c };
+            let pts = match p.get(3) {
+                Some(&k2) if kind == DrawingKind::DCurve => sample(&|t| {
+                    let u = 1.0 - t;
+                    let (w0, w1, w2, w3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+                    (w0 * a.0 + w1 * k.0 + w2 * k2.0 + w3 * b.0, w0 * a.1 + w1 * k.1 + w2 * k2.1 + w3 * b.1)
+                }),
+                _ => sample(&|t| {
+                    let u = 1.0 - t;
+                    (u * u * a.0 + 2.0 * u * t * k.0 + t * t * b.0, u * u * a.1 + 2.0 * u * t * k.1 + t * t * b.1)
+                }),
+            };
+            (pts, false)
+        }
+        _ => return None,
+    })
+}
+
+fn centre(pts: &[(f32, f32)]) -> (f32, f32) {
+    let n = pts.len().max(1) as f32;
+    (pts.iter().map(|p| p.0).sum::<f32>() / n, pts.iter().map(|p| p.1).sum::<f32>() / n)
+}
+
+/// Inside a convex outline: on the same side of every edge.
+fn inside_convex(pts: &[(f32, f32)], q: (f32, f32)) -> bool {
+    let n = pts.len();
+    let (mut pos, mut neg) = (false, false);
+    for i in 0..n {
+        let (p, r) = (pts[i], pts[(i + 1) % n]);
+        let cross = (r.0 - p.0) * (q.1 - p.1) - (r.1 - p.1) * (q.0 - p.0);
+        pos |= cross > 0.0;
+        neg |= cross < 0.0;
+    }
+    !(pos && neg)
+}
+
 /// The angle of a rise over a run, in degrees, -90 to 90: a few multiplies
 /// rather than the library's arctangent, which costs the engine more than its
 /// worth here; within 0.1° of it.
@@ -505,7 +625,10 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
     match (kind, b, c) {
         (DrawingKind::Path | DrawingKind::Brush, _, _) => {
             let w = if kind == DrawingKind::Brush { width + 0.5 } else { width };
-            if d.draft || dash != Dash::Solid {
+            if kind == DrawingKind::Brush && dash == Dash::Solid {
+                // Solid while it is drawn too: a dashed brush stroke reads as broken.
+                frame.ribbon(&d.points, w, color);
+            } else if d.draft || dash != Dash::Solid {
                 for pair in d.points.windows(2) {
                     stroke(frame, pair[0], pair[1], w, color, dash);
                 }
@@ -640,6 +763,31 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             }
             if let (Some(text), Some((p, q))) = (&d.shape.label, line(1.0)) {
                 label(frame, (p.0 + q.0) / 2.0, (p.1 + q.1) / 2.0 - 4.0, text.clone(), Align::Center, Baseline::Bottom);
+            }
+        }
+        (DrawingKind::Disk | DrawingKind::Ellipse | DrawingKind::Triangle | DrawingKind::RotRect | DrawingKind::Arc | DrawingKind::Curve | DrawingKind::DCurve, Some(b), _) if outline(kind, &d.points).is_some() => {
+            let Some((pts, closed)) = outline(kind, &d.points) else { return };
+            if let (true, Some(fill)) = (closed, fill) {
+                // Every closed shape here is convex: a fan from its middle fills it.
+                let m = centre(&pts);
+                for i in 0..pts.len() {
+                    frame.triangle(m, pts[i], pts[(i + 1) % pts.len()], fill);
+                }
+            }
+            let mut line = pts.clone();
+            if closed {
+                line.push(pts[0]);
+            }
+            if d.draft || dash != Dash::Solid {
+                for w in line.windows(2) {
+                    stroke(frame, w[0], w[1], width, color, dash);
+                }
+            } else {
+                frame.polyline(&line, width, color);
+            }
+            if let Some(text) = &d.shape.label {
+                let at = if closed { centre(&pts) } else { mid(a, b) };
+                label(frame, at.0, at.1, text.clone(), Align::Center, Baseline::Middle);
             }
         }
         (_, Some(b), _) => {
@@ -907,6 +1055,15 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             let (p, q) = extend(d.points[0], d.points[1], plot, ext_left, ext_right);
             distance_to_segment(cursor, p, q)
         }
+        DrawingKind::Disk | DrawingKind::Ellipse | DrawingKind::Triangle | DrawingKind::RotRect | DrawingKind::Arc | DrawingKind::Curve | DrawingKind::DCurve => match outline(kind, &d.points) {
+            Some((pts, closed)) => {
+                let n = pts.len();
+                let edges = if closed { n } else { n - 1 };
+                let near = (0..edges).map(|i| distance_to_segment(cursor, pts[i], pts[(i + 1) % n])).fold(f32::INFINITY, f32::min);
+                if closed && style.fill_on.unwrap_or(true) && inside_convex(&pts, cursor) { 0.0 } else { near }
+            }
+            None => f32::INFINITY,
+        },
         DrawingKind::Vertical => (cursor.0 - d.points[0].0).abs(),
         DrawingKind::Cross => (cursor.0 - d.points[0].0).abs().min((cursor.1 - d.points[0].1).abs()),
         DrawingKind::Circle => ((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - CIRCLE_PX).max(0.0),
@@ -935,6 +1092,22 @@ mod tests {
             assert!((angle_degrees(rise, run) - exact).abs() < 0.1, "{rise}/{run}: {} vs {exact}", angle_degrees(rise, run));
         }
         assert_eq!(angle_degrees(3.0, 0.0), 90.0);
+    }
+
+    #[test]
+    fn shapes_are_traced_where_they_are_drawn() {
+        let (pts, closed) = outline(DrawingKind::Disk, &[(100.0, 100.0), (150.0, 100.0)]).unwrap();
+        assert!(closed && pts.len() == ROUND_STEPS);
+        assert!(pts.iter().all(|p| ((p.0 - 100.0).hypot(p.1 - 100.0) - 50.0).abs() < 0.05), "every point 50px out, after 48 turns too");
+        let (pts, _) = outline(DrawingKind::Ellipse, &[(0.0, 0.0), (200.0, 100.0)]).unwrap();
+        assert!((pts[0].0 - 200.0).abs() < 0.01 && (pts[0].1 - 50.0).abs() < 0.01, "{:?}", pts[0]);
+        assert!((pts[12].0 - 100.0).abs() < 0.05 && (pts[12].1 - 100.0).abs() < 0.05, "a quarter round: {:?}", pts[12]);
+        let (pts, _) = outline(DrawingKind::RotRect, &[(0.0, 0.0), (100.0, 0.0), (50.0, 30.0)]).unwrap();
+        assert_eq!(pts[2], (100.0, 30.0));
+        let (pts, closed) = outline(DrawingKind::Arc, &[(0.0, 0.0), (100.0, 0.0), (50.0, 40.0)]).unwrap();
+        assert!(!closed && (pts[16].0 - 50.0).abs() < 0.01 && (pts[16].1 - 40.0).abs() < 0.01, "through its third point: {:?}", pts[16]);
+        assert!(inside_convex(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], (5.0, 5.0)));
+        assert!(!inside_convex(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], (15.0, 5.0)));
     }
 
     #[test]
