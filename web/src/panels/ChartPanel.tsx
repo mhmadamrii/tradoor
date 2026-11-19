@@ -45,6 +45,7 @@ import { behindMaximized, doc, marketOf, maximized, patchPanel, setPanelMarket, 
 import { tl, tlf } from '../lib/i18n';
 
 // Drawing settings load when a drawing is first selected: nobody needs them to see a chart.
+const LiveEntry = lazy(() => import('../trade/LiveEntry'));
 const DrawingSettings = lazy(() => import('../components/DrawingSettings').then((m) => ({ default: m.DrawingSettings })));
 const StudySettings = lazy(() => import('../components/StudySettings').then((m) => ({ default: m.StudySettings })));
 const AlertStyleSettings = lazy(() => import('../components/AlertStyleSettings').then((m) => ({ default: m.AlertStyleSettings })));
@@ -208,9 +209,6 @@ export interface TrainingChart {
   /** What to say over the candle under the pointer (or a finger), if anything. */
   hover: (time: number) => JSX.Element | null;
 }
-
-/** A chart label's width as the engine draws it: monospace, a character about 0.57 of its size (0.55 to 0.6 across faces), at the chart's text size less one. */
-const labelWidth = (text: string): number => text.length * (Number(doc.theme.fontPx ?? 11) - 1) * 0.57;
 
 export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingChart }) {
   const id = props.panel.id;
@@ -674,15 +672,6 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
     const s = h && (liveShapes()[market()] ?? [])[-2_000_000 - h.id]?.style;
     return h && s?.live === 'entry' ? h : null;
   };
-  /** Where the entry line's label begins, from the chart's right: it is drawn right-aligned, named and priced, by the axis. */
-  const entryLabelRight = (h: { id: number }) => {
-    const shape = (liveShapes()[market()] ?? [])[-2_000_000 - h.id];
-    const at = shape?.points[0]?.price ?? 0;
-    const text = `${shape?.label ?? ''}  ${formatPrice(at, digitsFor(market(), at))}`;
-    return (box?.clientWidth ?? 0) - axisX() + 6 + labelWidth(text) + 3 + 6;
-  };
-  /** Long: the take profit above, the stop below; a short's the other way, as the prices go. */
-  const entryLong = (h: { id: number }) => (liveShapes()[market()] ?? [])[-2_000_000 - h.id]?.style?.long !== 0;
   /** A TP or SL dragged out of the entry line: where it is, and the price there. */
   const [exitDrag, setExitDrag] = createSignal<{ side: 'tp' | 'sl'; y: number; text: string } | null>(null);
   const dragging = () => exitDrag() !== null;
@@ -2146,14 +2135,15 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
           </Show>
           <Show when={!props.training && hoveredEntry()}>
             {(h) => (
-              <div class="live-entry" classList={{ short: !entryLong(h()) }} style={{ right: `${entryLabelRight(h())}px`, top: `${h().y - 21}px` }} onPointerEnter={() => setOverEntry(h())} onPointerLeave={() => dragging() || setOverEntry(null)}>
-                <button class="tp" data-tip="Drag up or down to where the take profit goes" onPointerDown={(e) => startExitDrag(e, 'tp', h())}>
-                  TP
-                </button>
-                <button class="sl" data-tip="Drag up or down to where the stop goes" onPointerDown={(e) => startExitDrag(e, 'sl', h())}>
-                  SL
-                </button>
-              </div>
+              <LiveEntry
+                shape={(liveShapes()[market()] ?? [])[-2_000_000 - h().id]}
+                market={market()}
+                y={h().y}
+                axisRight={(box?.clientWidth ?? 0) - axisX()}
+                onEnter={() => setOverEntry(h())}
+                onLeave={() => dragging() || setOverEntry(null)}
+                onDrag={(e, side) => startExitDrag(e, side, h())}
+              />
             )}
           </Show>
           <Show when={exitDrag()}>
