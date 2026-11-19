@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The window's capabilities: none. It shows a server's page, which gets no IPC.",
+  "windows": ["main"],
+  "permissions": []
+}

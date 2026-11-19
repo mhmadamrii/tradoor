@@ -1,0 +1,19 @@
+[package]
+name = "tradoor-desktop"
+description = "tradoor terminal in a desktop window: a Tauri shell around a running tradoor-server."
+version = "0.9.1"
+edition = "2024"
+rust-version = "1.95"
+license = "AGPL-3.0-only"
+publish = false
+
+# Its own workspace: the repository's one (crates/*, bins/*) must not adopt this
+# crate, whose build needs the Tauri toolchain and none of the server's.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
