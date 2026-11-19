@@ -18,6 +18,10 @@ pub enum DrawingKind {
     Brush,
     Trendline,
     Horizontal,
+    /// A time, top to bottom of the pane.
+    Vertical,
+    /// A horizontal and a vertical through one point.
+    Cross,
     Ray,
     Rect,
     Fib,
@@ -32,8 +36,8 @@ pub enum DrawingKind {
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 13] =
-        [Self::Path, Self::Brush, Self::Trendline, Self::Horizontal, Self::Ray, Self::Rect, Self::Fib, Self::Text, Self::Measure, Self::Long, Self::Short, Self::Channel, Self::Circle];
+    pub const ALL: [DrawingKind; 15] =
+        [Self::Path, Self::Brush, Self::Trendline, Self::Horizontal, Self::Vertical, Self::Cross, Self::Ray, Self::Rect, Self::Fib, Self::Text, Self::Measure, Self::Long, Self::Short, Self::Channel, Self::Circle];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -41,6 +45,8 @@ impl DrawingKind {
             Self::Brush => "brush",
             Self::Trendline => "trendline",
             Self::Horizontal => "horizontal",
+            Self::Vertical => "vertical",
+            Self::Cross => "cross",
             Self::Ray => "ray",
             Self::Rect => "rect",
             Self::Fib => "fib",
@@ -60,7 +66,7 @@ impl DrawingKind {
     /// Anchors the kind takes — the minimum for a path or brush.
     pub fn arity(self) -> usize {
         match self {
-            Self::Horizontal | Self::Ray | Self::Text | Self::Circle => 1,
+            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle => 1,
             Self::Long | Self::Short | Self::Channel => 3,
             _ => 2,
         }
@@ -151,6 +157,8 @@ pub struct DrawingStyle {
     pub middle: bool,
     pub price_labels: bool,
     pub stats: bool,
+    /// A trendline's angle on screen, from a level line at its first end.
+    pub angle: bool,
     pub levels: Option<Vec<Level>>,
     pub level_labels: Option<bool>,
     // Positions.
@@ -211,6 +219,7 @@ impl DrawingStyle {
             "middle" => self.middle = flag(),
             "priceLabels" => self.price_labels = flag(),
             "stats" => self.stats = flag(),
+            "angle" => self.angle = flag(),
             "levels" => self.levels = Some(Level::parse_list(value)),
             "levelLabels" => self.level_labels = Some(flag()),
             "profitFill" => self.profit_fill = color(),
@@ -399,6 +408,19 @@ pub fn handles(d: &Placed<'_>) -> Vec<(f32, f32)> {
     }
 }
 
+/// The angle of a rise over a run, in degrees, -90 to 90: a few multiplies
+/// rather than the library's arctangent, which costs the engine more than its
+/// worth here; within 0.1° of it.
+fn angle_degrees(rise: f32, run: f32) -> f32 {
+    if run.abs() < f32::EPSILON {
+        return if rise >= 0.0 { 90.0 } else { -90.0 };
+    }
+    let z = rise / run;
+    let atan = |z: f32| core::f32::consts::FRAC_PI_4 * z - z * (z.abs() - 1.0) * (0.2447 + 0.0663 * z.abs());
+    let r = if z.abs() <= 1.0 { atan(z) } else { z.signum() * core::f32::consts::FRAC_PI_2 - atan(1.0 / z) };
+    r * (180.0 / core::f32::consts::PI)
+}
+
 /// The handles drawn as squares: those that move a side or a whole line rather than a corner or an end.
 fn square_handle(kind: DrawingKind, i: usize) -> bool {
     match kind {
@@ -494,8 +516,14 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 arrow(frame, pair[0], pair[1], w, color);
             }
         }
-        (DrawingKind::Horizontal, _, _) => {
-            stroke(frame, (plot.x, a.1), (plot.right(), a.1), width, color, dash);
+        // A level, a time, or both through one point.
+        (DrawingKind::Horizontal | DrawingKind::Cross | DrawingKind::Vertical, _, _) => {
+            if kind != DrawingKind::Vertical {
+                stroke(frame, (plot.x, a.1), (plot.right(), a.1), width, color, dash);
+            }
+            if kind != DrawingKind::Horizontal {
+                stroke(frame, (a.0, plot.y), (a.0, plot.bottom()), width, color, dash);
+            }
             if let Some(text) = &d.shape.label {
                 label(frame, plot.x + 6.0, a.1 - 3.0, text.clone(), Align::Left, Baseline::Bottom);
             }
@@ -627,6 +655,14 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             if style.middle {
                 let m = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
                 frame.circle(m.0, m.1, 3.0 + width / 2.0, color);
+            }
+            if style.angle && (b.0 - a.0).hypot(b.1 - a.1) > 1.0 {
+                // A level line out from the first end, the side the line runs, and the angle between them.
+                let side = if b.0 >= a.0 { 1.0 } else { -1.0 };
+                stroke(frame, a, (a.0 + 48.0 * side, a.1), width.min(1.0), color, Dash::Dashed);
+                let deg = angle_degrees(a.1 - b.1, (b.0 - a.0) * side);
+                let at = (a.0 + 54.0 * side, a.1 + if deg >= 0.0 { -2.0 } else { 2.0 });
+                frame.text(at.0, at.1, format!("{}°", fixed(f64::from(deg), 1)), text_color, if side > 0.0 { Align::Left } else { Align::Right }, if deg >= 0.0 { Baseline::Bottom } else { Baseline::Top }, font, None, Some(plot));
             }
             if style.price_labels {
                 for (i, pt) in [a, b].iter().enumerate() {
@@ -871,8 +907,10 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             let (p, q) = extend(d.points[0], d.points[1], plot, ext_left, ext_right);
             distance_to_segment(cursor, p, q)
         }
+        DrawingKind::Vertical => (cursor.0 - d.points[0].0).abs(),
+        DrawingKind::Cross => (cursor.0 - d.points[0].0).abs().min((cursor.1 - d.points[0].1).abs()),
         DrawingKind::Circle => ((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - CIRCLE_PX).max(0.0),
-        _ => distance_to_drawing(kind.as_str(), &d.points, cursor, &FIB_LEVELS),
+        _ => distance_to_drawing(kind, &d.points, cursor, &FIB_LEVELS),
     }
 }
 
@@ -888,6 +926,15 @@ mod tests {
         assert_eq!(run_to(100.0, 120.0, 2.0, &s.legs, 1.0), 30.0, "half taken at 110, half run to 120; the add is not on the way");
         assert_eq!(run_to(100.0, 90.0, 2.0, &s.legs, 1.0), -30.0, "two more coins at 95, all four stopped at 90");
         assert_eq!(run_to(100.0, 90.0, 1.0, &[(b'c', 95.0, 50.0)], -1.0), 7.5, "a short gains as it falls");
+    }
+
+    #[test]
+    fn an_angle_is_near_the_library_s() {
+        for (rise, run) in [(1.0, 1.0), (1.0, 3.0), (-2.0, 1.0), (5.0, 0.2), (0.0, 1.0), (-0.3, 4.0)] {
+            let exact = (rise as f32).atan2(run).to_degrees();
+            assert!((angle_degrees(rise, run) - exact).abs() < 0.1, "{rise}/{run}: {} vs {exact}", angle_degrees(rise, run));
+        }
+        assert_eq!(angle_degrees(3.0, 0.0), 90.0);
     }
 
     #[test]

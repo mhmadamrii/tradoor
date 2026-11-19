@@ -13,7 +13,7 @@ import type { BacktestResult, ChartEvent, ChartStatus, DrawingPoint, Legend, Liv
 import type { BacktestState } from '../lib/backtest-state';
 import { api, catalog, errorText, type AlertStyle, type ChartKind, type Drawing, type Product } from '../lib/api';
 import type { DrawingPatch } from '../components/DrawingSettings';
-import { defaultStyle, visibleOn, type Style } from '../lib/drawing-style';
+import { defaultStyle, engineKind, visibleOn, type Style } from '../lib/drawing-style';
 import { before, DrawingHistory, type DrawingChange, type DrawingRef, type Step } from '../lib/drawing-history';
 import { captureChart } from '../lib/capture';
 import { demoRate, forceFlatRenderer } from '../lib/demo';
@@ -63,7 +63,13 @@ const TOOL_STEPS: Record<string, string> = {
   brush: 'Brush: drag across the chart to draw',
   trendline: 'Trendline: click the first point, then the second · right-click or esc cancels',
   horizontal: 'Level: click the price',
-  ray: 'Ray: click where the level starts',
+  ray: 'Horizontal ray: click where the level starts',
+  vertical: 'Vertical line: click the time',
+  cross: 'Crossline: click the point',
+  trendray: 'Ray: click the first point, then one it runs through · right-click or esc cancels',
+  infoline: 'Info line: click the first point, then the second · right-click or esc cancels',
+  extended: 'Extended line: click two points on it · right-click or esc cancels',
+  angle: 'Trend angle: click the first point, then the second · right-click or esc cancels',
   rect: 'Zone: click one corner, then the opposite corner · right-click or esc cancels',
   fib: 'Fib: click the 100% end — where the move started — then the 0% end · right-click or esc cancels',
   text: 'Note: click where the note goes',
@@ -864,7 +870,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         .join(';'),
     }),
   );
-  createEffect(() => send({ t: 'tool', id: sid, value: offline() === null ? tool() : '', style: tool() ? defaultStyle(tool()) : {} }));
+  createEffect(() => send({ t: 'tool', id: sid, value: offline() === null ? engineKind(tool()) : '', style: tool() ? defaultStyle(tool()) : {} }));
   createEffect(() => send({ t: 'magnet', id: sid, value: magnet() }));
   createEffect(() => send({ t: 'selected', id: sid, value: selected() }));
   // Every timeframe shows the market's drawings, bar those hidden on this one,
@@ -1175,7 +1181,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
   }
 
   /** `pane`: the study pane it was drawn in, kept in its style; none for the candles. */
-  const createDrawing = (kind: string, points: DrawingPoint[], label?: string, pane?: string) => saveDrawing({ kind, points, label, style: pane ? { ...defaultStyle(kind), pane } : defaultStyle(kind) });
+  const createDrawing = (kind: string, points: DrawingPoint[], label?: string, pane?: string, look = kind) => saveDrawing({ kind, points, label, style: pane ? { ...defaultStyle(look), pane } : defaultStyle(look) });
 
   /** `previous`: what the change replaces, when the list already shows it (a dialog's preview). */
   async function changeDrawing(drawingId: number, patch: DrawingChange, record = true, previous?: DrawingChange): Promise<void> {
@@ -1311,7 +1317,8 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       case 'drawingCreated': {
         const { points, pane } = e;
         if (e.kind === 'text') setOverlay({ kind: 'note', save: (label) => void createDrawing('text', points, label, pane) });
-        else void createDrawing(e.kind, points, undefined, pane);
+        // A preset (a ray, an extended line) is saved as its kind with the preset's look.
+        else void createDrawing(e.kind, points, undefined, pane, engineKind(tool()) === e.kind ? tool() : e.kind);
         break;
       }
       case 'selection':

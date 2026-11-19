@@ -18,7 +18,13 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'path', icon: 'path', title: 'Path — click each turn, then Enter or double-click to finish' },
   { kind: 'trendline', icon: 'trendline', title: 'Trendline — click the two ends; anchored to time and price' },
   { kind: 'horizontal', icon: 'horizontal', title: 'Horizontal level — one click, drawn edge to edge' },
-  { kind: 'ray', icon: 'ray', title: 'Ray — one click; the level starts where you put it' },
+  { kind: 'trendray', icon: 'trendray', title: 'Ray — click two points; the line runs on past the second' },
+  { kind: 'infoline', icon: 'infoline', title: 'Info line — click the two ends; shows the move, percent and bars' },
+  { kind: 'extended', icon: 'extended', title: 'Extended line — click two points; the line runs edge to edge' },
+  { kind: 'angle', icon: 'angle', title: 'Trend angle — click the two ends; shows its angle on screen' },
+  { kind: 'ray', icon: 'ray', title: 'Horizontal ray — one click; the level runs on from where you put it' },
+  { kind: 'vertical', icon: 'vertical', title: 'Vertical line — one click, drawn top to bottom' },
+  { kind: 'cross', icon: 'cross', title: 'Crossline — one click; a level and a time through the point' },
   { kind: 'rect', icon: 'rect', title: 'Zone — click opposite corners' },
   { kind: 'channel', icon: 'channel', title: 'Parallel channel — click the two ends of one line, then where the parallel line runs' },
   { kind: 'fib', icon: 'fib', title: 'Fib retracement — click the 100% end first, then the 0% end' },
@@ -39,7 +45,7 @@ const toolTip = (t: { kind: string; title: string }): string => {
 
 /** The tools in groups, for the rail's buttons and a phone's sheet (DrawingSheet). */
 export const GROUPS: { name: string; kinds: string[] }[] = [
-  { name: 'Lines', kinds: ['trendline', 'ray', 'horizontal'] },
+  { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross'] },
   { name: 'Channels', kinds: ['channel'] },
   { name: 'Fibonacci', kinds: ['fib'] },
   { name: 'Shapes', kinds: ['rect', 'path'] },
