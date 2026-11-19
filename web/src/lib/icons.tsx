@@ -19,6 +19,8 @@ const PATHS = {
   folder: 'M3 6h6l2 2h10v11H3z',
   layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5',
   avwap: 'M3 18c4-1 6-8 9-8s5 4 9 2M6 15v6',
+  forecast: 'M3 18l7-6 3 3 8-9M15 6h6v6',
+  barspattern: 'M5 6v12M3 9h4v5H3zM11 4v9M9 6h4v4H9zM17 10v10M15 12h4v5h-4z',
   vprofile: 'M4 3v18M4 5h6M4 9h11M4 13h16M4 17h8M4 21h4',
   comment: 'M4 4h16v11H9l-5 4z',
   pricerange: 'M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4M5 3h14M5 21h14',

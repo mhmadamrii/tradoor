@@ -88,6 +88,8 @@ const TOOL_STEPS: Record<string, string> = {
   gannbox: 'Gann box: click one corner, then the opposite one · right-click or esc cancels',
   gannfan: 'Gann fan: click the start, then the end of the 1×1 line · right-click or esc cancels',
   avwap: 'Anchored VWAP: click the bar it starts from',
+  forecast: 'Forecast: click where it starts, then the target · right-click or esc cancels',
+  barspattern: 'Bars pattern: click the first bar, the last, then where the copy goes · right-click or esc cancels',
   vprofile: 'Volume profile: click the first time, then the last · right-click or esc cancels',
   signpost: 'Signpost: click where it stands',
   comment: 'Comment: click where it points',

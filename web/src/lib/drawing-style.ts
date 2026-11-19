@@ -21,6 +21,7 @@ export const PRESETS: Record<string, { kind: string; style: Style }> = {
   fibchannel: { kind: 'channel', style: { levels: '0,1,,solid|0.236,1,,solid|0.382,1,,solid|0.5,1,,solid|0.618,1,,solid|0.786,1,,solid|1,1,,solid', fillOn: false } },
   pricerange: { kind: 'measure', style: { axis: 'p' } },
   daterange: { kind: 'measure', style: { axis: 't' } },
+  forecast: { kind: 'trendline', style: { rightArrow: true, stats: true, priceLabels: true, color: '#26a69a', width: 2 } },
 };
 
 /** The kind the engine draws for a tool. */
@@ -51,6 +52,8 @@ export function factoryStyle(kind: string): Style {
     case 'fibcircles':
     case 'fibfan':
     case 'gannfan':
+      return { color: '#2962ff', width: 1 };
+    case 'barspattern':
       return { color: '#2962ff', width: 1 };
     case 'avwap':
       return { color: '#ff9800', width: 1.5 };

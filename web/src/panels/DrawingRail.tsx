@@ -50,6 +50,8 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'fibtime', icon: 'fibtime', title: 'Fib time zone — click the start, then one span; lines 1, 2, 3, 5, 8… spans on' },
   { kind: 'text', icon: 'text', title: 'Note — click where it goes, then type it' },
   { kind: 'measure', icon: 'measure', title: 'Measure — click from and to; reports the move, percent and bars' },
+  { kind: 'forecast', icon: 'forecast', title: 'Forecast — click where it starts, then the target; shows the move, percent and bars' },
+  { kind: 'barspattern', icon: 'barspattern', title: 'Bars pattern — click the first bar, the last, then where to lay the copy' },
   { kind: 'pricerange', icon: 'pricerange', title: 'Price range — click from and to; reports the move and percent' },
   { kind: 'daterange', icon: 'daterange', title: 'Date range — click from and to; reports the bars between' },
   { kind: 'long', icon: 'long', title: 'Long position — click the entry; drag its handles to set stop, target and width' },
@@ -89,7 +91,7 @@ export const GROUPS: { name: string; kinds: string[] }[] = [
   { name: 'Shapes', kinds: ['rect', 'rotrect', 'path', 'disk', 'ellipse', 'triangle', 'arc', 'curve', 'dcurve'] },
   { name: 'Text and notes', kinds: ['text', 'callout', 'comment', 'pricenote', 'pricelabel', 'signpost', 'pin', 'flag'] },
   { name: 'Volume', kinds: ['avwap', 'vprofile'] },
-  { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure', 'pricerange', 'daterange'] },
+  { name: 'Forecasting and measure', kinds: ['long', 'short', 'forecast', 'barspattern', 'measure', 'pricerange', 'daterange'] },
 ];
 
 /** Each group's tool last picked, which its rail button shows and arms. */

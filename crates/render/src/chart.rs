@@ -3149,9 +3149,32 @@ impl Chart {
         let series = match shape.kind {
             DrawingKind::AnchoredVwap => self.anchored_vwap(shape, &pane.scale),
             DrawingKind::VolumeProfile if shape.points.len() >= 2 => self.volume_profile(shape, &pane.scale, &points),
+            DrawingKind::BarsPattern if shape.points.len() >= 3 => self.bars_pattern(shape, &pane.scale),
             _ => Vec::new(),
         };
-        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit, series })
+        let bar_px = self.time.bar_spacing as f32;
+        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit, series, bar_px })
+    }
+
+    /// A bars pattern's copy: each bar between its first two times, moved on as
+    /// many bars as the third point is from the first and shifted so the first
+    /// bar opens at the third point's price; a ratio under a log scale.
+    fn bars_pattern(&self, shape: &DrawingShape, scale: &PriceScale) -> Vec<(f32, f32, f32)> {
+        const MOST: usize = 500;
+        let (Some(la), Some(lb), Some(lc)) = (self.drawing_logical(shape, shape.points[0].time), self.drawing_logical(shape, shape.points[1].time), self.drawing_logical(shape, shape.points[2].time)) else { return Vec::new() };
+        let last = self.total_bars().saturating_sub(1) as f64;
+        let (i0, i1) = (la.min(lb).round().max(0.0) as usize, la.max(lb).round().min(last) as usize);
+        let Some(first) = self.bar(i0) else { return Vec::new() };
+        let shift = scale.transform(shape.points[2].price) - scale.transform(first.open);
+        let at = |p: f64| scale.y(scale.untransform(scale.transform(p) + shift)) as f32;
+        let mut out = Vec::new();
+        for (k, i) in (i0..=i1).take(MOST).enumerate() {
+            let Some(b) = self.bar(i) else { break };
+            let x = self.time.x(lc.round() + k as f64) as f32;
+            out.push((x, at(b.high), at(b.low)));
+            out.push((x, at(b.open), at(b.close)));
+        }
+        out
     }
 
     /// The VWAP from the anchor's bar to the newest, a point a bar, drawn only
@@ -5635,6 +5658,18 @@ mod tests {
         assert_eq!(profile.series.len(), 24);
         assert!(profile.series.iter().all(|r| r.2 <= profile.series[0].2 + 0.01), "the point of control is the longest row");
         assert!((profile.series[0].2 - 300.0 * 0.7).abs() < 0.5);
+    }
+
+    #[test]
+    fn a_bars_pattern_copies_its_range_to_its_third_point() {
+        let mut c = chart();
+        let pts = vec![c.anchor_at(150.0, 300.0).unwrap(), c.anchor_at(250.0, 300.0).unwrap(), c.anchor_at(400.0, 220.0).unwrap()];
+        c.set_drawings(vec![DrawingShape::new(Some(7), DrawingKind::BarsPattern, pts.clone())]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let (la, lb) = (c.drawing_logical(&c.drawings[0], pts[0].time).unwrap(), c.drawing_logical(&c.drawings[0], pts[1].time).unwrap());
+        assert_eq!(placed.series.len(), 2 * ((lb.round() - la.round()) as usize + 1), "a wick and a body for each bar in the range");
+        assert!((placed.series[0].0 - placed.points[2].0).abs() < c.time.bar_spacing as f32, "the copy starts at the third point's bar");
+        assert!((placed.series[1].1 - 220.0).abs() < 1.0, "its first bar opens at the third point's price: {:?}", placed.series[1]);
     }
 
     #[test]

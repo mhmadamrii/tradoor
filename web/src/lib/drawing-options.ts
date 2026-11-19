@@ -29,6 +29,7 @@ export const KIND_NAMES: Record<string, string> = {
   fibfan: 'Fib speed resistance fan',
   gannbox: 'Gann box',
   gannfan: 'Gann fan',
+  barspattern: 'Bars pattern',
   avwap: 'Anchored VWAP',
   vprofile: 'Fixed range volume profile',
   signpost: 'Signpost',

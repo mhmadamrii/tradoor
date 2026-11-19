@@ -92,10 +92,12 @@ pub enum DrawingKind {
     AnchoredVwap,
     /// The volume traded at each price between two times.
     VolumeProfile,
+    /// The bars between two times, copied faintly to a third point: a past move laid where it might repeat.
+    BarsPattern,
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 46] = [
+    pub const ALL: [DrawingKind; 47] = [
         Self::Path,
         Self::Brush,
         Self::Trendline,
@@ -142,6 +144,7 @@ impl DrawingKind {
         Self::Comment,
         Self::AnchoredVwap,
         Self::VolumeProfile,
+        Self::BarsPattern,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -192,6 +195,7 @@ impl DrawingKind {
             Self::Comment => "comment",
             Self::AnchoredVwap => "avwap",
             Self::VolumeProfile => "vprofile",
+            Self::BarsPattern => "barspattern",
         }
     }
 
@@ -203,7 +207,7 @@ impl DrawingKind {
     pub fn arity(self) -> usize {
         match self {
             Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin | Self::Signpost | Self::Comment | Self::AnchoredVwap => 1,
-            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff | Self::FibExt => 3,
+            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff | Self::FibExt | Self::BarsPattern => 3,
             Self::DCurve => 4,
             _ => 2,
         }
@@ -493,6 +497,8 @@ pub struct Placed<'a> {
     /// What a drawing reads off the bars: an anchored VWAP's line, or a volume
     /// profile's rows as (top, bottom, length) with the point of control first.
     pub series: Vec<(f32, f32, f32)>,
+    /// One bar's width on screen, for what draws bars.
+    pub bar_px: f32,
 }
 
 impl Placed<'_> {
@@ -1045,6 +1051,20 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             let at = line.first().copied().unwrap_or(a);
             frame.circle(at.0, at.1, 3.0, color);
         }
+        (DrawingKind::BarsPattern, Some(b), _) => {
+            // The copied range marked where it was taken from; the copy, a wick and a body a bar, where it was put.
+            let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+            stroke(frame, (x0, a.1), (x1, a.1), 1.0, color.with_alpha(110), Dash::Dotted);
+            let body = (d.bar_px * 0.6).max(1.0);
+            for pair in d.series.chunks(2) {
+                if let [(x, high, low), (_, open, close)] = pair {
+                    let up = close <= open;
+                    let tone = if up { theme.bull } else { theme.bear }.with_alpha(120);
+                    frame.rect(x - 0.5, *high, 1.0, (low - high).max(1.0), tone);
+                    frame.rect(x - body / 2.0, open.min(*close), body, (open - close).abs().max(1.0), tone);
+                }
+            }
+        }
         (DrawingKind::VolumeProfile, Some(b), _) => {
             let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
             for (i, &(top, bottom, len)) in d.series.iter().enumerate() {
@@ -1402,6 +1422,7 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             }
             None => f32::INFINITY,
         },
+        DrawingKind::BarsPattern => d.series.chunks(2).filter_map(|p| p.first()).map(|&(x, h, l)| if cursor.1 >= h && cursor.1 <= l { (cursor.0 - x).abs() } else { f32::INFINITY }).fold(f32::INFINITY, f32::min).min(d.points.iter().map(|p| (cursor.0 - p.0).hypot(cursor.1 - p.1)).fold(f32::INFINITY, f32::min)),
         DrawingKind::AnchoredVwap => d.series.windows(2).map(|w| distance_to_segment(cursor, (w[0].0, w[0].1), (w[1].0, w[1].1))).fold(((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - 4.0).max(0.0), f32::min),
         DrawingKind::VolumeProfile if d.points.len() >= 2 => {
             let (x0, x1) = (d.points[0].0.min(d.points[1].0), d.points[0].0.max(d.points[1].0));
