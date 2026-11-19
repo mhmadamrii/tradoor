@@ -2520,6 +2520,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tradoor-mcp"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "tokio",
+ "tradoor-codec",
+ "tradoor-core",
+ "tradoor-frost-script",
+ "tradoor-ingest",
+ "tradoor-store",
+ "tradoor-venues",
+]
+
+[[package]]
 name = "tradoor-recorder"
 version = "0.9.1"
 dependencies = [
