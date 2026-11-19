@@ -20,9 +20,9 @@ use tradoor_venues::MarketRef;
 
 use crate::api::{owner, ApiError, ApiResult, AppState};
 
-pub const KINDS: [&str; 36] = [
+pub const KINDS: [&str; 44] = [
     "path", "trendline", "horizontal", "vertical", "cross", "ray", "rect", "fib", "text", "measure", "long", "short", "brush", "channel", "circle", "disk", "ellipse", "triangle", "rotrect", "arc", "curve", "dcurve", "regression", "flat", "disjoint", "pitchfork", "schiff", "mschiff", "marker", "markup", "markdown", "pricelabel",
-    "pricenote", "callout", "flag", "pin",
+    "pricenote", "callout", "flag", "pin", "fibext", "fibtime", "fibcircles", "fibfan", "gannbox", "gannfan", "signpost", "comment",
 ];
 /// A style is a flat object of short settings; this bounds what one row may carry.
 pub const MAX_STYLE_BYTES: usize = 8 * 1024;
@@ -34,9 +34,9 @@ pub const MAX_PER_OWNER: i64 = 20_000;
 /// than an exact count.
 pub fn arity(kind: &str) -> Option<(usize, bool)> {
     Some(match kind {
-        "horizontal" | "vertical" | "cross" | "ray" | "text" | "circle" | "markup" | "markdown" | "pricelabel" | "flag" | "pin" => (1, false),
-        "trendline" | "rect" | "fib" | "measure" | "disk" | "ellipse" | "regression" | "marker" | "pricenote" | "callout" => (2, false),
-        "long" | "short" | "channel" | "triangle" | "rotrect" | "arc" | "curve" | "flat" | "disjoint" | "pitchfork" | "schiff" | "mschiff" => (3, false),
+        "horizontal" | "vertical" | "cross" | "ray" | "text" | "circle" | "markup" | "markdown" | "pricelabel" | "flag" | "pin" | "signpost" | "comment" => (1, false),
+        "trendline" | "rect" | "fib" | "measure" | "disk" | "ellipse" | "regression" | "marker" | "pricenote" | "callout" | "fibtime" | "fibcircles" | "fibfan" | "gannbox" | "gannfan" => (2, false),
+        "long" | "short" | "channel" | "triangle" | "rotrect" | "arc" | "curve" | "flat" | "disjoint" | "pitchfork" | "schiff" | "mschiff" | "fibext" => (3, false),
         "dcurve" => (4, false),
         "path" | "brush" => (2, true),
         _ => return None,

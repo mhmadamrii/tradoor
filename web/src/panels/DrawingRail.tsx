@@ -41,8 +41,17 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'dcurve', icon: 'dcurve', title: 'Double curve — click both ends, then its two bends' },
   { kind: 'channel', icon: 'channel', title: 'Parallel channel — click the two ends of one line, then where the parallel line runs' },
   { kind: 'fib', icon: 'fib', title: 'Fib retracement — click the 100% end first, then the 0% end' },
+  { kind: 'fibext', icon: 'fibext', title: 'Trend-based fib extension — click where the move starts and ends, then where to lay it off from' },
+  { kind: 'fibchannel', icon: 'fibchannel', title: 'Fib channel — click the two ends of one line, then how wide; lines at the fib ratios across it' },
+  { kind: 'fibfan', icon: 'fibfan', title: 'Fib speed resistance fan — click the start, then the end of the move; lines at the fib cuts of its rise and run' },
+  { kind: 'fibcircles', icon: 'fibcircles', title: 'Fib circles — click the centre, then a point; rings at the fib ratios of the distance' },
+  { kind: 'gannbox', icon: 'gannbox', title: 'Gann box — click opposite corners; cut at the Gann ratios both ways' },
+  { kind: 'gannfan', icon: 'gannfan', title: 'Gann fan — click the start, then the end of the 1×1 line' },
+  { kind: 'fibtime', icon: 'fibtime', title: 'Fib time zone — click the start, then one span; lines 1, 2, 3, 5, 8… spans on' },
   { kind: 'text', icon: 'text', title: 'Note — click where it goes, then type it' },
   { kind: 'measure', icon: 'measure', title: 'Measure — click from and to; reports the move, percent and bars' },
+  { kind: 'pricerange', icon: 'pricerange', title: 'Price range — click from and to; reports the move and percent' },
+  { kind: 'daterange', icon: 'daterange', title: 'Date range — click from and to; reports the bars between' },
   { kind: 'long', icon: 'long', title: 'Long position — click the entry; drag its handles to set stop, target and width' },
   { kind: 'short', icon: 'short', title: 'Short position — click the entry; drag its handles to set stop, target and width' },
   { kind: 'brush', icon: 'brush', title: 'Brush — drag to draw freehand' },
@@ -55,6 +64,8 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'pricenote', icon: 'pricenote', title: 'Price note — click the price, then where its tag goes' },
   { kind: 'pricelabel', icon: 'pricelabel', title: 'Price label — one click; a tag reading the price there' },
   { kind: 'pin', icon: 'pin', title: 'Pin — one click' },
+  { kind: 'signpost', icon: 'signpost', title: 'Signpost — click where it stands, then type its note' },
+  { kind: 'comment', icon: 'comment', title: 'Comment — click where it points, then type it' },
   { kind: 'flag', icon: 'flag', title: 'Flag — one click' },
 ];
 
@@ -70,12 +81,12 @@ const toolTip = (t: { kind: string; title: string }): string => {
 export const GROUPS: { name: string; kinds: string[] }[] = [
   { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross', 'channel', 'regression', 'flat', 'disjoint'] },
   { name: 'Pitchforks', kinds: ['pitchfork', 'schiff', 'mschiff'] },
-  { name: 'Fibonacci', kinds: ['fib'] },
+  { name: 'Gann and Fibonacci', kinds: ['fib', 'fibext', 'fibchannel', 'fibtime', 'fibfan', 'fibcircles', 'gannbox', 'gannfan'] },
   { name: 'Brushes', kinds: ['brush', 'highlighter'] },
   { name: 'Arrows', kinds: ['arrow', 'marker', 'markup', 'markdown'] },
   { name: 'Shapes', kinds: ['rect', 'rotrect', 'path', 'disk', 'ellipse', 'triangle', 'arc', 'curve', 'dcurve'] },
-  { name: 'Text and notes', kinds: ['text', 'callout', 'pricenote', 'pricelabel', 'pin', 'flag'] },
-  { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure'] },
+  { name: 'Text and notes', kinds: ['text', 'callout', 'comment', 'pricenote', 'pricelabel', 'signpost', 'pin', 'flag'] },
+  { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure', 'pricerange', 'daterange'] },
 ];
 
 /** Each group's tool last picked, which its rail button shows and arms. */

@@ -79,6 +79,17 @@ const TOOL_STEPS: Record<string, string> = {
   pricelabel: 'Price label: click the price',
   pin: 'Pin: click where it goes',
   flag: 'Flag: click where it goes',
+  fibext: 'Fib extension: click where the move starts, where it ends, then where to lay it off from · right-click or esc cancels',
+  fibchannel: 'Fib channel: click both ends of one line, then how wide · right-click or esc cancels',
+  fibtime: 'Fib time zone: click the start, then one span on · right-click or esc cancels',
+  fibfan: 'Fib fan: click the start of the move, then its end · right-click or esc cancels',
+  fibcircles: 'Fib circles: click the centre, then a point · right-click or esc cancels',
+  gannbox: 'Gann box: click one corner, then the opposite one · right-click or esc cancels',
+  gannfan: 'Gann fan: click the start, then the end of the 1×1 line · right-click or esc cancels',
+  signpost: 'Signpost: click where it stands',
+  comment: 'Comment: click where it points',
+  pricerange: 'Price range: click from, then to · right-click or esc cancels',
+  daterange: 'Date range: click from, then to · right-click or esc cancels',
   regression: 'Regression trend: click the first time, then the last · right-click or esc cancels',
   flat: 'Flat top/bottom: click both ends of the trendline, then the level · right-click or esc cancels',
   disjoint: 'Disjoint channel: click both ends of the first line, then where the second starts · right-click or esc cancels',
@@ -1346,7 +1357,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       case 'drawingCreated': {
         const { points, pane } = e;
         // A note and a callout ask for their words first.
-        if (e.kind === 'text' || e.kind === 'callout') setOverlay({ kind: 'note', save: (label) => void createDrawing(e.kind, points, label, pane) });
+        if (e.kind === 'text' || e.kind === 'callout' || e.kind === 'signpost' || e.kind === 'comment') setOverlay({ kind: 'note', save: (label) => void createDrawing(e.kind, points, label, pane) });
         // A preset (a ray, an extended line) is saved as its kind with the preset's look.
         else void createDrawing(e.kind, points, undefined, pane, engineKind(tool()) === e.kind ? tool() : e.kind);
         break;

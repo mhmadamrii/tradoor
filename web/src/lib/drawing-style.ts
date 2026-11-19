@@ -18,6 +18,9 @@ export const PRESETS: Record<string, { kind: string; style: Style }> = {
   angle: { kind: 'trendline', style: { angle: true } },
   arrow: { kind: 'trendline', style: { rightArrow: true } },
   highlighter: { kind: 'brush', style: { color: '#ffeb3b59', width: 8 } },
+  fibchannel: { kind: 'channel', style: { levels: '0,1,,solid|0.236,1,,solid|0.382,1,,solid|0.5,1,,solid|0.618,1,,solid|0.786,1,,solid|1,1,,solid', fillOn: false } },
+  pricerange: { kind: 'measure', style: { axis: 'p' } },
+  daterange: { kind: 'measure', style: { axis: 't' } },
 };
 
 /** The kind the engine draws for a tool. */
@@ -42,7 +45,18 @@ export function factoryStyle(kind: string): Style {
     case 'mschiff':
       return { color: '#2962ff', width: 1, fillOn: true, fill: '#2962ff1f' };
     case 'fib':
+    case 'fibext':
       return { width: 1, fillOn: true, fill: '#2962ff14', extendRight: false };
+    case 'fibtime':
+    case 'fibcircles':
+    case 'fibfan':
+    case 'gannfan':
+      return { color: '#2962ff', width: 1 };
+    case 'gannbox':
+      return { color: '#2962ff', width: 1, fillOn: true, fill: '#2962ff14' };
+    case 'signpost':
+    case 'comment':
+      return { color: '#2962ff', textSize: 13 };
     case 'rect':
     case 'rotrect':
     case 'disk':
@@ -99,10 +113,12 @@ export function lastLooks(): Record<string, Style> {
   return raw && typeof raw === 'object' ? (raw as Record<string, Style>) : {};
 }
 
-/** A drawing restyled: the next one of its kind starts looking like it. */
+/** A drawing restyled: the next one from the same tool starts looking like it.
+ *  A preset's drawing carries its tool's name (`tool`), so a fib channel's
+ *  levels never become a plain channel's. */
 export function rememberLook(kind: string, style: Style): void {
   const all = lastLooks();
-  all[kind] = lookOf(style);
+  all[typeof style.tool === 'string' ? style.tool : kind] = lookOf(style);
   writePref(LOOK_KEY, JSON.stringify(all));
 }
 
@@ -112,10 +128,14 @@ export function forgetLook(kind: string): void {
   writePref(LOOK_KEY, JSON.stringify(all));
 }
 
-/** The style a new drawing of `kind` starts with: the factory one, the saved
- *  default over it, and over both the look of the last of its kind restyled. */
-export function defaultStyle(kind: string): Style {
-  return { ...factoryStyle(kind), ...(templates()[kind] ?? {}), ...(lastLooks()[engineKind(kind)] ?? {}) };
+/** The style a new drawing from `tool` starts with: the factory one, the saved
+ *  default over it, the look of the last from that tool restyled over both, and
+ *  over all of it what makes a preset that tool (a ray's extension, a range's
+ *  axis) — its colours and widths are a look like any other. */
+export function defaultStyle(tool: string): Style {
+  const preset = PRESETS[tool];
+  const defining = preset ? Object.fromEntries(Object.entries(preset.style).filter(([k]) => !LOOK_KEYS.includes(k))) : {};
+  return { ...factoryStyle(tool), ...(templates()[tool] ?? {}), ...(lastLooks()[tool] ?? {}), ...defining, ...(preset ? { tool } : {}) };
 }
 
 // ---------------------------------------------------------------- visibility

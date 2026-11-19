@@ -5446,6 +5446,22 @@ mod tests {
     }
 
     #[test]
+    fn a_fib_extension_lays_its_move_off_from_its_third_point_and_time_zones_count_bars() {
+        let mut c = chart();
+        let pts = vec![c.anchor_at(100.0, 300.0).unwrap(), c.anchor_at(200.0, 200.0).unwrap(), c.anchor_at(250.0, 260.0).unwrap()];
+        let mut ext = DrawingShape::new(Some(4), DrawingKind::FibExt, pts);
+        ext.style = DrawingStyle::from_pairs([("levels", "1,1")]);
+        let zones = DrawingShape::new(Some(5), DrawingKind::FibTime, vec![c.anchor_at(100.0, 400.0).unwrap(), c.anchor_at(120.0, 400.0).unwrap()]);
+        c.set_drawings(vec![ext, zones]);
+        // The 100% level: the first move's 100px rise, from the third point at 260.
+        assert_eq!(c.drawing_at(300.0, 160.0), Some(4));
+        assert_eq!(c.drawing_at(300.0, 200.0), None, "not at the move's own end");
+        // Zones at 0, 1, 2, 3, 5, 8 spans: 100, 120, 140, 160, 200, 260.
+        assert_eq!(c.drawing_at(260.0, 450.0), Some(5));
+        assert_eq!(c.drawing_at(230.0, 450.0), None, "between the 5th and the 8th");
+    }
+
+    #[test]
     fn a_zone_has_eight_handles_and_a_side_moves_alone() {
         let mut c = chart();
         let a = c.anchor_at(200.0, 200.0).unwrap();

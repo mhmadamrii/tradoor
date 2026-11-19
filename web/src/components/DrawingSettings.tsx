@@ -33,11 +33,11 @@ export interface DrawingPatch {
 
 type Tab = 'inputs' | 'style' | 'text' | 'coordinates' | 'visibility';
 
-const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve']);
+const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve', 'fibtime', 'fibcircles', 'fibfan', 'gannfan']);
 /** Closed shapes: a border and a background, as a zone has. */
 /** Marks drawn in one colour. */
 const MARK_KINDS = new Set(['marker', 'markup', 'markdown', 'pricelabel', 'pricenote', 'pin', 'flag']);
-const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle', 'regression', 'flat', 'disjoint', 'pitchfork', 'schiff', 'mschiff']);
+const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle', 'regression', 'flat', 'disjoint', 'pitchfork', 'schiff', 'mschiff', 'gannbox']);
 
 export function DrawingSettings(props: {
   drawing: Drawing;
@@ -226,12 +226,12 @@ export function DrawingSettings(props: {
             <Check label="Always show stats" checked={flag('alwaysStats')} onChange={(v) => set('alwaysStats', v)} />
           </Show>
 
-          <Show when={kind === 'callout'}>
+          <Show when={kind === 'callout' || kind === 'signpost' || kind === 'comment'}>
             <Row label="Box">
               <ColorField value={str('color', '#2962ff')} onChange={(v) => set('color', v)} />
             </Row>
           </Show>
-          <Show when={kind === 'text' || kind === 'callout'}>
+          <Show when={kind === 'text' || kind === 'callout' || kind === 'signpost' || kind === 'comment'}>
             <Row label="Text">
               <ColorField value={str('textColor', '#2962ff')} onChange={(v) => set('textColor', v)} />
               <SizeSelect value={num('textSize', 14)} onChange={(v) => set('textSize', v)} />
@@ -245,7 +245,7 @@ export function DrawingSettings(props: {
             </Row>
           </Show>
 
-          <Show when={kind === 'channel' || kind === 'fib'}>
+          <Show when={kind === 'channel' || kind === 'fib' || kind === 'fibext'}>
             <LevelsEditor
               kind={kind}
               raw={style().levels}
@@ -253,7 +253,7 @@ export function DrawingSettings(props: {
               onMainColor={(c) => set('color', c)}
               onChange={(levels) => set('levels', serializeLevels(levels))}
             />
-            <Show when={kind === 'fib'}>
+            <Show when={kind === 'fib' || kind === 'fibext'}>
               <Row label="Trend line">
                 <LineField color={str('color', '#787b86')} width={num('width', 1)} dash={str('dash', 'solid') as Dash} set={set} />
               </Row>
