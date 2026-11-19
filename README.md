@@ -332,6 +332,35 @@ ssh user@server 'bash -s' < scripts/export-signals.sh > signals.tar.gz   # the s
 
 The server reads the visitor's address from nginx's `X-Real-IP`, so it must only be reachable through nginx; `deploy/compose.yml` publishes it on loopback. `http.conf` keys nginx's limits on Cloudflare's `CF-Connecting-IP`, which is trustworthy only where nginx admits nothing but Cloudflare (`allow` its ranges, `deny all`). After certbot adds its HTTPS block, merge `tradoor.conf`'s locations into the site by hand.
 
+## Supporting tradoor
+
+tradoor is free and open source, with nothing behind a paywall, and it stays
+that way. Keeping it running and growing still costs something: servers,
+history storage and bandwidth, the AI tools it's built with, and a lot of
+development time.
+
+Three ways to help, if you want to:
+
+- **[Sponsor on GitHub](https://github.com/sponsors/rsalianto)**, monthly or once.
+- **Sign up on an exchange through tradoor's links** (Rewards, in the top bar).
+  You pay the same fees or less; the exchange shares a part with tradoor.
+- **Star the repo and tell a trader friend.**
+
+<!--
+Shown once the first one joins.
+
+### Sponsors
+
+Monthly sponsors from $50, by name or logo.
+
+### Featured exchanges
+
+Exchanges that support tradoor. Their links are referral links.
+
+Being featured changes nothing in the app: every exchange tradoor supports is
+charted and traded the same way.
+-->
+
 ## Disclaimer
 
 tradoor terminal ([tradoorterminal.com](https://tradoorterminal.com/)) is software: a tool that charts market data and works out technical studies from it. It is not a financial adviser, an investment adviser, a broker or an exchange, and it is not licensed or registered as any of them.

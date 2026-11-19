@@ -33,6 +33,22 @@ if command -v wasm-opt >/dev/null 2>&1; then
   wasm-opt -Oz --converge --strip-target-features --strip-producers --strip-debug --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals \
     -o web/src/wasm/frost-script/frost-script.wasm web/src/wasm/frost-script/frost-script.wasm
 fi
-for f in web/src/wasm/pkg/tradoor_wasm_bg.wasm web/src/wasm/pkg/tradoor_wasm.js web/src/wasm/frost-script/frost-script.wasm; do
+# The order signer, a module of its own loaded only when someone trades: no glue, nothing imported.
+cargo build -p tradoor-trade-wasm --target wasm32-unknown-unknown --profile wasm
+mkdir -p web/src/wasm/trade
+cp target/wasm32-unknown-unknown/wasm/tradoor_trade_wasm.wasm web/src/wasm/trade/trade.wasm
+if command -v wasm-opt >/dev/null 2>&1; then
+  wasm-opt -Oz --converge --strip-target-features --strip-producers --strip-debug --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals \
+    -o web/src/wasm/trade/trade.wasm web/src/wasm/trade/trade.wasm
+fi
+# Lighter's signer: Lighter's own library (Go) behind tradoor's narrow interface
+# (signers/lighter), loaded only when a Lighter account trades. Go's loader comes
+# from the same Go that built it, as it must.
+mkdir -p web/src/wasm/lighter
+(cd signers/lighter && GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o ../../web/src/wasm/lighter/lighter.wasm .)
+GLUE="$(go env GOROOT)/lib/wasm/wasm_exec.js"
+[ -f "$GLUE" ] || GLUE="$(go env GOROOT)/misc/wasm/wasm_exec.js"
+cp "$GLUE" web/src/wasm/lighter/wasm_exec.js
+for f in web/src/wasm/pkg/tradoor_wasm_bg.wasm web/src/wasm/pkg/tradoor_wasm.js web/src/wasm/frost-script/frost-script.wasm web/src/wasm/trade/trade.wasm web/src/wasm/lighter/lighter.wasm; do
   printf '%-45s %8d bytes  %7d gzip\n' "$f" "$(wc -c <"$f")" "$(gzip -9c "$f" | wc -c)"
 done

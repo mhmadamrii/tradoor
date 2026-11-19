@@ -297,6 +297,8 @@ pub struct DrawingStyle {
     pub text_bg: Option<Color>,
     pub middle: bool,
     pub price_labels: bool,
+    /// A level's name at its right end, before its price, not at its left: the trading lines'.
+    pub label_right: bool,
     pub stats: bool,
     /// A trendline's angle on screen, from a level line at its first end.
     pub angle: bool,
@@ -304,6 +306,8 @@ pub struct DrawingStyle {
     pub level_labels: Option<bool>,
     /// A measure of the price only (`p`) or the time only (`t`); both when unset.
     pub axis: Option<u8>,
+    /// An arrow mark drawn at its bar rather than its price: under the low pointing up, over the high pointing down.
+    pub at_bar: bool,
     // Positions.
     pub profit_fill: Option<Color>,
     pub stop_fill: Option<Color>,
@@ -361,11 +365,13 @@ impl DrawingStyle {
             "textBg" => self.text_bg = color(),
             "middle" => self.middle = flag(),
             "priceLabels" => self.price_labels = flag(),
+            "labelRight" => self.label_right = flag(),
             "stats" => self.stats = flag(),
             "angle" => self.angle = flag(),
             "levels" => self.levels = Some(Level::parse_list(value)),
             "levelLabels" => self.level_labels = Some(flag()),
             "axis" => self.axis = value.bytes().next(),
+            "atBar" => self.at_bar = flag(),
             "profitFill" => self.profit_fill = color(),
             "stopFill" => self.stop_fill = color(),
             "profitLine" => self.profit_line = color(),
@@ -836,6 +842,13 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
         (DrawingKind::MarkUp | DrawingKind::MarkDown | DrawingKind::Flag | DrawingKind::Pin | DrawingKind::PriceLabel, _, _) => {
             let (x, y) = a;
             match kind {
+                // A fill's arrow at its bar: slim, a fine stem under a small head, out of the candles' way.
+                DrawingKind::MarkUp | DrawingKind::MarkDown if style.at_bar => {
+                    let c = style.color.unwrap_or(if kind == DrawingKind::MarkUp { theme.bull } else { theme.bear });
+                    let s = if kind == DrawingKind::MarkUp { 1.0 } else { -1.0 };
+                    frame.triangle((x, y), (x - 4.5, y + 7.0 * s), (x + 4.5, y + 7.0 * s), c);
+                    stroke(frame, (x, y + 6.0 * s), (x, y + 16.0 * s), 1.5, c, Dash::Solid);
+                }
                 DrawingKind::MarkUp | DrawingKind::MarkDown => {
                     let c = style.color.unwrap_or(if kind == DrawingKind::MarkUp { theme.bull } else { theme.bear });
                     let s = if kind == DrawingKind::MarkUp { 1.0 } else { -1.0 };
@@ -868,11 +881,24 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             if kind != DrawingKind::Horizontal {
                 stroke(frame, (a.0, plot.y), (a.0, plot.bottom()), width, color, dash);
             }
-            if let Some(text) = &d.shape.label {
-                label(frame, plot.x + 6.0, a.1 - 3.0, text.clone(), Align::Left, Baseline::Bottom);
-            }
-            if style.price_labels {
-                frame.text(plot.right() - 4.0, a.1 - 2.0, format_price(prices[0], digits), text_color, Align::Right, Baseline::Bottom, font, None, Some(plot));
+            if style.label_right && kind == DrawingKind::Horizontal {
+                // Name and price as one, at the right end, by the price axis.
+                let text = match (&d.shape.label, style.price_labels) {
+                    (Some(t), true) if !t.is_empty() => format!("{t}  {}", format_price(prices[0], digits)),
+                    (Some(t), false) => t.clone(),
+                    (_, true) => format_price(prices[0], digits),
+                    _ => String::new(),
+                };
+                if !text.is_empty() {
+                    label(frame, plot.right() - 6.0, a.1 - 3.0, text, Align::Right, Baseline::Bottom);
+                }
+            } else {
+                if let Some(text) = &d.shape.label {
+                    label(frame, plot.x + 6.0, a.1 - 3.0, text.clone(), Align::Left, Baseline::Bottom);
+                }
+                if style.price_labels {
+                    frame.text(plot.right() - 4.0, a.1 - 2.0, format_price(prices[0], digits), text_color, Align::Right, Baseline::Bottom, font, None, Some(plot));
+                }
             }
         }
         (DrawingKind::Ray, _, _) => {

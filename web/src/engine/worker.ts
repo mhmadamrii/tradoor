@@ -1309,6 +1309,10 @@ const calls: Handlers = {
     slot.afterInput();
     return used;
   },
+  priceAt: ({ id, y }) => {
+    const p = slots.get(id)?.engine.price_at(y);
+    return p !== undefined && Number.isFinite(p) ? p : null;
+  },
   values: valuesCall,
   daily: dailyCall,
   capture: captureCall,

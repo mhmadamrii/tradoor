@@ -1,0 +1,256 @@
+/* The Trade and Positions panels. */
+.tradepanel { overflow: hidden; font-size: .6875rem; }
+.tradepanel .toolbar { gap: 2px; }
+
+.om-acct { position: relative; display: inline-flex; }
+.om-acct > .tb { gap: 5px; }
+.om-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.om-dot.open { background: var(--bull); }
+.om-dot.connecting { background: var(--warn); }
+.om-dot.closed { background: var(--bear); }
+.om-menu { position: absolute; top: 22px; right: 0; z-index: 30; width: 260px; padding-bottom: 6px; }
+.om-menu .om-field { padding: 2px 10px; }
+.om-menu .om-field span:first-child { flex: 0 0 72px; }
+.om-menu .om-field .box { width: 80px; }
+.om-link { display: block; padding: 6px 10px 2px; font-size: .6875rem; }
+.om-forget { display: block; width: 100%; padding: 6px 10px; text-align: left; color: var(--bear); font-size: .6875rem; }
+.om-forget:hover { background: var(--surface-3); }
+
+.om-note { margin: 4px 0; font-size: .65625rem; line-height: 1.4; color: var(--muted); }
+.om-menu .om-note { padding: 0 10px; }
+.om-note.warn { color: var(--warn); }
+.om-note.dim { color: var(--dim); }
+
+.om-connect { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
+.om-connect h3 { margin: 0; font-size: .8125rem; }
+.om-connect > p { margin: 0; color: var(--muted); line-height: 1.45; max-width: 52ch; }
+.om-connect details { border: 1px solid var(--border); padding: 6px 8px; }
+.om-connect details[open] { display: flex; flex-direction: column; gap: 6px; }
+.om-connect summary { cursor: pointer; color: var(--muted); }
+.om-connect details[open] > summary { margin-bottom: 2px; color: var(--text); }
+.om-row { display: flex; align-items: center; gap: 6px; }
+.om-row select { height: 28px; }
+.om-primary { flex: 1; height: 28px; --fill: var(--primary); background: var(--fill); font-weight: 700; font-size: .75rem; }
+.om-primary:disabled { opacity: 0.5; }
+
+.om-seg { display: flex; border: 1px solid var(--border); }
+.om-seg button { flex: 1; padding: 4px 0; color: var(--muted); font-size: .6875rem; }
+.om-seg button + button { border-left: 1px solid var(--border); }
+.om-seg button.on { background: var(--surface-3); color: var(--text); font-weight: 700; box-shadow: inset 0 -2px 0 var(--primary); }
+
+.om-input { flex: 1; min-width: 0; height: 24px; border: 1px solid var(--border); background: var(--surface-2); padding: 0 6px; color: var(--text); font-size: .75rem; }
+.om-input:focus { outline: none; border-color: var(--primary); }
+.om-field { display: flex; align-items: center; gap: 6px; }
+.om-field > span:first-child { flex: 0 0 58px; color: var(--muted); white-space: nowrap; }
+.om-field select { height: 24px; }
+.om-check { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.om-check input { margin: 0; accent-color: var(--primary); }
+
+.om-ticket { display: flex; flex-direction: column; gap: 7px; min-height: 0; padding: 8px; overflow: auto; background: var(--surface); font-size: .6875rem; }
+.om-quote { display: flex; align-items: center; gap: 8px; }
+.om-coin { font-weight: 700; color: var(--text); }
+.om-coinlink { padding: 0; font: inherit; color: inherit; text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: pointer; }
+.om-coinlink:hover { color: var(--primary); }
+/* A position's side at a glance: a bar before its coin. */
+.om-coin.om-long, .om-coin.om-short { box-shadow: inset 3px 0 0 var(--side); padding-left: 10px; }
+.om-coin.om-long { --side: var(--bull); }
+.om-coin.om-short { --side: var(--bear); }
+.om-lev { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.om-lev input[type=range] { flex: 1; accent-color: var(--primary); }
+.om-shares { display: flex; align-items: center; gap: 2px; }
+.om-shares .tb { border: 1px solid var(--border); }
+.om-opts { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.om-exits { display: flex; flex-direction: column; gap: 5px; }
+.om-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.om-buy, .om-sell { height: 32px; font-weight: 700; font-size: .75rem; background: var(--fill); }
+.om-buy { --fill: var(--bull); }
+.om-sell { --fill: var(--bear); }
+.om-buy:disabled, .om-sell:disabled { opacity: 0.4; }
+.om-buy:hover:not(:disabled), .om-sell:hover:not(:disabled) { filter: brightness(1.1); }
+.om-pos { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 0; border-top: 1px solid var(--border); }
+.om-summary { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; padding-top: 6px; border-top: 1px solid var(--border); }
+.om-summary dt { color: var(--dim); }
+.om-summary dd { margin: 0; text-align: right; }
+
+.om-n { min-width: 14px; padding: 0 4px; border-radius: 7px; background: var(--surface-3); color: var(--muted); font-size: .59375rem; text-align: center; }
+.tb.on .om-n { background: color-mix(in oklab, var(--bg) 30%, transparent); color: var(--bg); }
+.om-kill { color: var(--bear); border: 1px solid color-mix(in oklab, var(--bear) 40%, transparent); }
+.om-kill.on { --fill: var(--bear); background: var(--fill); }
+
+.om-table { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.om-table table { width: 100%; border-collapse: collapse; font-size: .6875rem; }
+.om-table th { position: sticky; top: 0; z-index: 1; padding: 4px 6px; background: var(--surface-2); color: var(--dim); font-weight: 400; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.om-table td { padding: 3px 6px; white-space: nowrap; border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+/* A heading sits as its column does: numbers to the right, words to the left. */
+.om-table td.num, .om-table th.num { text-align: right; }
+.om-table tr:hover td { background: var(--surface-2); }
+.om-acts { text-align: right; }
+.om-acts .tb { border: 1px solid var(--border); margin-left: 2px; }
+.om-acts .tb { min-height: 24px; padding: 2px 9px; font-size: .71875rem; }
+.om-parts-wrap { position: relative; display: inline-flex; gap: 2px; margin-left: 2px; }
+.om-part-btn.on { color: var(--text); border-color: var(--primary); }
+.om-close-btn { color: var(--bear); }
+.om-parts { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 30; display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
+.om-parts button { min-width: 44px; padding: 6px 8px; border-radius: 4px; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--text); }
+.om-parts button:hover { background: color-mix(in oklab, var(--bear) 16%, transparent); color: var(--bear); }
+.om-ask { display: inline-flex; align-items: center; gap: 4px; font-size: .71875rem; white-space: nowrap; }
+.om-ask .om-yes { color: var(--bear); border-color: color-mix(in oklab, var(--bear) 50%, transparent); }
+.om-closing { display: flex; flex-direction: column; gap: 12px; max-width: 460px; }
+.om-closing .om-check { display: flex; align-items: center; gap: 8px; font-size: .8125rem; }
+.om-closing .om-pcts { display: flex; gap: 6px; }
+.om-closing .om-pcts input { width: 56px; text-align: right; }
+.om-cell { padding: 0; font: inherit; }
+.om-cell:hover:not(:disabled) { text-decoration: underline; }
+.om-inline { display: inline-flex; gap: 2px; }
+.om-inline .box { width: 64px; }
+
+/* Testnet only for now: said on every trading panel. */
+.om-testnet { display: inline-flex; align-items: center; padding: 0 5px; border: 1px solid var(--warn); color: var(--warn); font-size: .59375rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.5; }
+.om-connect h3 .om-testnet { margin-left: 6px; vertical-align: 2px; }
+.om-testnote { margin: 0; padding: 6px 8px; border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 8%, transparent); color: var(--muted); line-height: 1.45; }
+
+/* Many accounts. */
+.om-pick { max-width: 190px; height: 18px; }
+.om-total { padding: 0 6px; }
+.om-acctline { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.om-accounts { display: flex; flex-direction: column; border: 1px solid var(--border); }
+.om-acc { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.om-acc:last-child { border-bottom: 0; }
+.om-acc-name { font-weight: 700; color: var(--text); font-size: .71875rem; }
+.om-acc-name:hover { color: var(--primary); }
+.om-acc .om-input { max-width: 180px; }
+.om-add { display: flex; flex-direction: column; gap: 7px; padding-top: 6px; border-top: 1px solid var(--border); }
+.om-add h3 { margin: 0; font-size: .75rem; }
+.om-unlock { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 8%, transparent); }
+.om-who { color: var(--muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.om-refresh { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: .6875rem; }
+
+/* Algorithms. */
+.om-kinds { flex-wrap: wrap; }
+.om-kinds button { flex: 1 0 auto; padding: 4px 6px; }
+.om-kinds button.algo:not(.on) { color: var(--dim); }
+.om-two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center; }
+.om-two .om-field > span:first-child { flex-basis: 38px; }
+.om-field input[type=range] { flex: 1; accent-color: var(--primary); }
+.om-algos { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
+.om-algo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; }
+.om-algo:not(.live) { opacity: 0.65; }
+.om-bar { flex: 0 0 60px; height: 4px; background: var(--surface-3); }
+.om-bar > span { display: block; height: 100%; background: var(--primary); }
+.om-algo-detail { flex: 1 1 100%; font-size: .65625rem; }
+.om-algos-tab { padding: 6px 8px; }
+
+.om-form { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+
+/* Text on a filled control is black, and white only when the theme's fill is too dark for black
+   to read (Crayons Light's near-black). Lightness under 0.5 flips it; browsers without relative
+   colours keep the black. */
+.om-primary, .om-buy, .om-sell, .om-kill.on { color: #000; color: oklch(from var(--fill) clamp(0, (0.5 - l) * 1000, 1) 0 0); }
+.dialog .row.trade .grow { color: var(--text); font-weight: 600; }
+.dialog .row.trade.warn .grow { color: var(--warn); font-weight: 400; }
+
+/* Only when…: the conditions an order waits for. */
+.om-when { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid color-mix(in oklab, var(--primary) 35%, var(--border)); }
+.om-when-head { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.om-join button { padding: 1px 8px; }
+.om-when-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.om-when-row select { height: 22px; }
+.om-when-row .om-input { flex: 1 1 70px; height: 22px; }
+.om-when-add { align-self: flex-start; color: var(--primary); font-size: .6875rem; }
+
+/* A strategy traded live, in the tester. */
+.om-live { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: .6875rem; }
+.om-live .om-primary, .om-live .om-kill { align-self: flex-start; height: 24px; padding: 0 12px; }
+
+/* A position as a picture. */
+.dialog.om-card { max-width: 860px; }
+.dialog.om-card > header .dim { padding: 0 8px; font-size: .65625rem; }
+.dialog.om-card canvas { display: block; width: 100%; height: auto; }
+.om-card-opts, .om-card-acts { display: flex; align-items: center; gap: 12px; }
+
+/* Baskets and hedges. */
+.om-basket { display: flex; flex-direction: column; gap: 6px; }
+.om-leg { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.om-leg select { height: 22px; }
+.om-leg .om-input { flex: 0 0 64px; height: 22px; }
+.om-hedge { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; }
+.om-hedge input[type=range] { flex: 1 1 80px; accent-color: var(--primary); }
+.om-pos .spacer { flex: 1; }
+
+/* Which wallet: each as it names itself, with its own icon. */
+.om-wallets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--border); background: var(--surface-2); }
+.om-wallets > .dim { flex: 1 0 100%; }
+.om-wallet { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .75rem; }
+.om-wallet:hover:not(:disabled) { border-color: var(--primary); }
+.om-wallet img, .om-wallet-blank { width: 20px; height: 20px; border-radius: 4px; }
+.om-wallet-blank { background: var(--surface-3); }
+
+/* The Trade panel's account: its exchange's mark and name, and a list of all by exchange. */
+.om-switch { position: relative; display: inline-flex; }
+.om-switch-btn { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: .6875rem; }
+.om-switch-btn:hover { border-color: var(--primary); }
+.om-switch-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.om-switch-menu { right: 0; top: 26px; min-width: 230px; }
+.om-switch-group .cap { display: flex; align-items: center; gap: 6px; padding: 7px 10px 3px; color: var(--dim); font-size: .625rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.om-switch-menu button { justify-content: flex-start; gap: 10px; padding: 6px 10px 6px 28px; }
+.om-switch-menu button .grow { flex: 1; }
+.om-switch-menu > button { padding-left: 10px; }
+.om-start { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 16px; color: var(--muted); text-align: center; }
+/* Settings' trading accounts. */
+.om-settings { display: flex; flex-direction: column; gap: 12px; }
+.om-tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--border); }
+.om-tabs button { padding: 7px 14px; color: var(--muted); font-size: .75rem; border-bottom: 2px solid transparent; }
+.om-tabs button.on { color: var(--text); border-bottom-color: var(--primary); }
+.om-tabs .om-testnet { margin-left: auto; }
+.om-addbtn { width: 100%; padding: 10px; border: 1px dashed var(--border); border-radius: 6px; color: var(--text); font-weight: 600; letter-spacing: 0.04em; }
+.om-addbtn:hover { border-color: var(--primary); color: var(--primary); }
+/* How the keys are kept: each layer, lit when it is on. */
+.om-layers { margin: 4px 0 10px; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 5px; color: var(--dim); font-size: .6875rem; line-height: 1.45; }
+.om-layers li.on { color: var(--text); }
+.om-layers li.on::marker { color: var(--bull); }
+.om-layers b { font-weight: 700; }
+.om-none { margin: 6px 0; color: var(--dim); }
+.om-acc-head { display: flex; justify-content: space-between; padding: 0 10px; color: var(--dim); font-size: .625rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.om-acc-logo { display: inline-flex; flex: none; }
+.om-step { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.om-step > * { align-self: stretch; }
+.om-step > .tb { align-self: flex-start; }
+.om-step h3 { margin: 0; font-size: .875rem; }
+.om-step-head { display: flex; align-items: center; gap: 10px; }
+.om-venues { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.om-venue { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; text-align: left; color: var(--text); }
+.om-venue:hover { border-color: var(--primary); background: var(--surface-2); }
+.om-venue-name { font-size: .875rem; font-weight: 700; }
+.om-venue .dim { font-size: .6875rem; line-height: 1.45; }
+
+/* The passphrase, the keys' third layer: a card with its state, its fields, how soon it locks. */
+.om-pass { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.om-pass.on { border-color: color-mix(in oklab, var(--bull) 45%, var(--border)); }
+.om-pass-head { display: flex; align-items: baseline; gap: 8px; }
+.om-pass-head b { font-size: .8125rem; }
+.om-chip { margin-left: auto; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; color: var(--dim); font-size: .625rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.om-chip.on { border-color: var(--bull); color: var(--bull); }
+.om-chip.lock { border-color: var(--warn, #ffc247); color: var(--warn, #ffc247); }
+.om-pass .om-note { margin: 0; line-height: 1.5; }
+.om-pfield { display: flex; flex-direction: column; gap: 5px; }
+.om-pfield > span { color: var(--muted); font-size: .6875rem; }
+.om-pfield .om-input { width: 100%; height: 32px; }
+.om-pcheck { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -2px 0 0; color: var(--dim); font-size: .6875rem; }
+.om-pcheck .ok { color: var(--bull); }
+.om-seg-sm button { flex: 1; padding: 5px 0; font-size: .6875rem; }
+.om-pactions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.om-pactions .om-input { flex: 1; min-width: 160px; height: 32px; }
+.om-pactions .dbtn.primary:disabled { opacity: 0.45; }
+/* Where to see it in DevTools. */
+.om-verify { margin: 6px 0; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; font-size: .6875rem; color: var(--muted); }
+.om-verify summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.om-verify ol { margin: 8px 0 6px; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; line-height: 1.5; }
+.om-verify code { padding: 0 4px; border-radius: 3px; background: var(--surface-3); font-size: .625rem; }
+.om-verify kbd { padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; font-size: .625rem; }
+.om-verify .warn { margin: 4px 0 0; }
+
+.om-est { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: -2px; font-size: .6875rem; color: var(--text); }
+.om-est-k { color: var(--muted); }
+.om-est-side.warn, .om-est-side.warn .dim { color: var(--warn); }
+.om-closing > .tb { align-self: start; border: 1px solid var(--border); }
+.om-liq { color: var(--warn); }

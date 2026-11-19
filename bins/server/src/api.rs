@@ -183,6 +183,7 @@ pub fn router(state: AppState, data_dir: PathBuf, web_dir: Option<PathBuf>) -> R
         .route("/index/candles", get(indices::candles))
         .route("/index/latest", get(indices::latest))
         .route("/journal", get(journal::list).post(journal::create))
+        .route("/journal/sync", axum::routing::post(journal::sync))
         .route("/journal/reviews", get(journal::reviews))
         .route("/journal/reviews/{week}", axum::routing::put(journal::save_review))
         .route("/journal/{id}", axum::routing::patch(journal::update).delete(journal::delete_one))

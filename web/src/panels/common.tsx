@@ -7,10 +7,10 @@ import { TIMEFRAMES } from '../lib/timeframes';
 import { tl } from '../lib/i18n';
 
 /** The ticker, which opens symbol search, and its venue — left out where a panel spans every venue. */
-export function MarketButton(props: { panelId: string; market: string; venue?: boolean }) {
+export function MarketButton(props: { panelId: string; market: string; venue?: boolean; /** The exchange its search opens on. */ exchange?: string }) {
   return (
     <>
-      <button class="symbol" data-tip="Change symbol — or just start typing" onClick={() => setOverlay({ kind: 'symbol', panelId: props.panelId, initial: '' })}>
+      <button class="symbol" data-tip="Change symbol — or just start typing" onClick={() => setOverlay({ kind: 'symbol', panelId: props.panelId, initial: '', exchange: props.exchange })}>
         <span>{symbolOf(props.market)}</span>
         <Icon name="chevron" size={10} />
       </button>

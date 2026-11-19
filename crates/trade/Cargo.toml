@@ -1,0 +1,11 @@
+[package]
+name = "tradoor-trade"
+description = "tradoor's order system: signing an exchange's orders with a trading key, and nothing else. It reaches no network and keeps no key; it is handed bytes and gives back a signature."
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+sha3 = { version = "0.10", default-features = false }

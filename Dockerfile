@@ -8,6 +8,8 @@
 # the classic builder too, so it needs no BuildKit features.
 
 FROM denoland/deno:bin-2.9.6 AS deno
+# Go builds the order system's Lighter signer (signers/lighter) to WebAssembly.
+FROM golang:1.27-trixie AS go
 
 FROM rust:1.95-slim-trixie AS toolchain
 ARG WASM_BINDGEN=0.2.128
@@ -24,6 +26,8 @@ RUN rustup target add wasm32-unknown-unknown \
     | tar -xz -C /usr/local/bin --strip-components=2 "binaryen-${BINARYEN}/bin/wasm-opt"
 RUN cargo install cargo-chef --version "${CARGO_CHEF}" --locked
 COPY --from=deno /deno /usr/local/bin/deno
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
 WORKDIR /src
 
 FROM toolchain AS planner
@@ -44,6 +48,7 @@ COPY crates crates
 COPY bins bins
 COPY migrations migrations
 COPY scripts scripts
+COPY signers signers
 COPY web web
 RUN cargo build --release --locked -p tradoor-server -p tradoor-recorder -p tradoor-backfill
 RUN ./scripts/build-wasm.sh

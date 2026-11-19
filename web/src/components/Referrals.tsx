@@ -4,11 +4,12 @@
  * that offers them once (lib/referral). A link opens the exchange's own page in
  * a new tab, carrying the referral code and nothing about the visitor.
  */
-import { For, type Component } from 'solid-js';
+import { For, Show, type Component } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { EXCHANGES, ExchangeLogo } from '../lib/exchanges';
 import { Icon } from '../lib/icons';
 import { dismissReferralCard } from '../lib/referral';
+import { SPONSORS } from '../lib/sponsors';
 import { tl } from '../lib/i18n';
 
 interface Partner {
@@ -115,12 +116,24 @@ export function ReferralDialog(props: { onClose(): void }) {
           </span>
           <span class="who">
             <b>{tl('Sponsor tradoor on GitHub')}</b>
-            <span>{tl('Free and open source, with nothing behind a paywall. If it helps your trading, a sponsorship keeps it that way and keeps it moving.')}</span>
+            <span>{tl('Free and open source, with nothing behind a paywall. Sponsors help cover servers, tools and development time, and keep tradoor moving.')}</span>
           </span>
           <span class="go">
             {tl('Sponsor')} <Icon name="external" size={11} stroke={2} />
           </span>
         </a>
+        <Show when={SPONSORS.length > 0}>
+          <div class="ref-backers">
+            <span>{tl('Supported by')}</span>
+            <For each={SPONSORS}>
+              {(s) => (
+                <a href={s.url} target="_blank" rel="noopener">
+                  {s.logo ? <img src={s.logo} alt={s.name} loading="lazy" /> : s.name}
+                </a>
+              )}
+            </For>
+          </div>
+        </Show>
         </div>
         <footer>
           <span>{tl('Referral links · open in a new tab')}</span>

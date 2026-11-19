@@ -401,6 +401,11 @@ impl ChartEngine {
         self.chart.key(key)
     }
 
+    /// The price at a height on the chart's main pane: where a line dragged from the page lands.
+    pub fn price_at(&self, y: f32) -> f64 {
+        self.chart.price_at_y(y)
+    }
+
     pub fn cursor(&self) -> String {
         self.chart.cursor().css().to_string()
     }
@@ -533,6 +538,15 @@ impl ChartEngine {
                 set(&o, "alert", a);
             }
             None => set(&o, "alert", JsValue::NULL),
+        }
+        match l.live {
+            Some((id, y)) => {
+                let a = obj();
+                set(&a, "id", id as f64);
+                set(&a, "y", f64::from(y));
+                set(&o, "live", a);
+            }
+            None => set(&o, "live", JsValue::NULL),
         }
         match l.flow {
             Some((index, x, y)) => {

@@ -19,6 +19,7 @@ import { tl, tlf } from '../lib/i18n';
 
 // Side panels, fetched when a layout shows one: the chart and watchlist come first.
 const EconPanel = lazy(() => import('../panels/EconPanel').then((m) => ({ default: m.EconPanel })));
+const Trading = lazy(() => import('../panels/trading'));
 const WatchlistPanel = lazy(() => import('../panels/WatchlistPanel').then((m) => ({ default: m.WatchlistPanel })));
 const ValuesPanel = lazy(() => import('../panels/ValuesPanel').then((m) => ({ default: m.ValuesPanel })));
 const AlertsPanel = lazy(() => import('../panels/AlertsPanel').then((m) => ({ default: m.AlertsPanel })));
@@ -37,9 +38,9 @@ export function panelTitle(p: Panel): string {
   // Flow and Signal list what the server follows, whatever chart they drive.
   if (p.type === 'flow') return 'Flow';
   if (p.type === 'signals') return 'Signal';
-  if (p.type === 'econ') return tl(PANEL_TITLE.econ);
+  if (p.type === 'econ' || p.type === 'positions') return tl(PANEL_TITLE[p.type]);
   // Every trade and the book now: no timeframe to them.
-  if (p.type === 'dom' || p.type === 'tape') return `${tl(PANEL_TITLE[p.type])} · ${symbolOf(marketOf(p))}`;
+  if (p.type === 'dom' || p.type === 'tape' || p.type === 'trade') return `${tl(PANEL_TITLE[p.type])} · ${symbolOf(marketOf(p))}`;
   const label = `${symbolOf(marketOf(p))} ${tfLabel(timeframeOf(p))}`;
   if (p.type === 'chart') return p.tpo ? `TPO · ${label}` : label;
   return `${tl(PANEL_TITLE[p.type])} · ${label}`;
@@ -537,5 +538,8 @@ function PanelView(props: { panel: Panel }) {
       return <TapePanel panel={p} />;
     case 'econ':
       return <EconPanel panel={p} />;
+    case 'trade':
+    case 'positions':
+      return <Trading panel={p} />;
   }
 }

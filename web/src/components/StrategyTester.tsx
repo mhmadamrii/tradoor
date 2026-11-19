@@ -6,7 +6,7 @@
  * the exchange's bars; nothing about the strategy leaves it but a link the
  * reader chooses to share. Loaded the first time a chart opens it.
  */
-import { createMemo, createSignal, For, Match, onCleanup, Show, Switch } from 'solid-js';
+import { createMemo, createSignal, For, lazy, Match, onCleanup, Show, Switch } from 'solid-js';
 import type { PoolData } from '../engine/backtest-worker';
 import type { BacktestResult, StrategyRun } from '../engine/protocol';
 import { barOf, money, pct, ratio, REASONS, shareOf, span, statsOf, tradesCsv, tradesOf, venueFees, type Stats, type TradeRow } from '../lib/backtest';
@@ -44,6 +44,9 @@ export interface TesterProps {
   beside: boolean;
 }
 
+/** Live trading of the strategy: in the order system, loaded only when opened. */
+const StrategyLive = lazy(() => import('../trade/StrategyLive').then((m) => ({ default: m.StrategyLive })));
+
 const TABS: { id: string; label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'trades', label: 'Trades' },
@@ -59,6 +62,7 @@ const tone = (v: number) => (v > 0 ? 'bull' : v < 0 ? 'bear' : '');
 const when = (ms: number) => (Number.isFinite(ms) ? formatAlertTime(ms) : '—');
 
 export function StrategyTester(props: TesterProps) {
+  const [liveOpen, setLiveOpen] = createSignal(false);
   const ok = (): Ok | null => (props.result?.ok ? props.result : null);
   const failed = () => (props.result && !props.result.ok ? props.result : null);
   const rows = createMemo(() => {
@@ -146,6 +150,9 @@ export function StrategyTester(props: TesterProps) {
         <button class="iconbtn" classList={{ on: props.state.alerts }} aria-label={tl('Notify on the strategy\'s orders')} data-tip={props.state.alerts ? 'A notice whenever a bar closes with an order, while tradoor is open · click to stop' : 'Tell me when a bar closes with an order, while tradoor is open'} onClick={() => void toggleAlerts(props)}>
           <Icon name="alarm" size={13} />
         </button>
+        <button class="tb bt-live" classList={{ on: liveOpen() }} data-tip="Trade this strategy on an account as its bars close" onClick={() => setLiveOpen(!liveOpen())}>
+          Live
+        </button>
         <Show when={!mobile()}>
           <button class="iconbtn" aria-label={props.beside ? tl('Put the tester under the chart') : tl('Put the tester beside the chart')} data-tip={props.beside ? 'Under the chart' : 'Beside the chart: the chart and the settings side by side'} onClick={() => props.onChange({ dock: props.beside ? 'bottom' : 'right' })}>
             <Icon name={props.beside ? 'splitDown' : 'splitRight'} size={13} />
@@ -158,6 +165,9 @@ export function StrategyTester(props: TesterProps) {
           <Icon name="close" size={13} />
         </button>
       </header>
+      <Show when={liveOpen()}>
+        <StrategyLive market={props.market} timeframe={props.timeframe} onOn={() => !props.state.alerts && props.onChange({ alerts: true })} />
+      </Show>
       <nav class="bt-tabs" role="tablist">
         <For each={TABS}>
           {(t) => (

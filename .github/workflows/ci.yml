@@ -47,6 +47,12 @@ jobs:
       - name: Rust tests
         run: cargo test --workspace --exclude tradoor-wasm --locked
 
+      # Lighter's signer for the order system is Lighter's own Go library, built to WebAssembly.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: signers/lighter/go.mod
+          cache-dependency-path: signers/lighter/go.sum
+
       - name: Chart engine (WASM)
         run: ./scripts/build-wasm.sh
 

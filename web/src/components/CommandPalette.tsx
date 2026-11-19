@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onMount } from 'solid-js';
 import { tl } from '../lib/i18n';
+import { tradeOn } from '../trade/present';
 
 export interface Command {
   group: string;
@@ -16,8 +17,17 @@ export function CommandPalette(props: { commands: Command[]; onClose(): void }) 
   let list!: HTMLDivElement;
   onMount(() => input.focus());
 
+  // With trading accounts in this browser, a typed line can be an order: read by the commands, loaded then.
+  const [trading, setTrading] = createSignal<typeof import('../trade/command-run') | null>(null);
+  onMount(() => tradeOn() && void import('../trade/command-run').then((m) => setTrading(() => m)));
+  const tradeRow = createMemo((): (Command & { error?: boolean }) | null => {
+    const r = trading()?.preview(query());
+    return r ? { group: r.error ? 'Trade ▲' : 'Trade', label: r.label, hint: r.error ? undefined : '↵ sends', run: r.run, error: r.error } : null;
+  });
   const matches = createMemo(() => {
     const words = query().trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const row = tradeRow();
+    if (row) return [row];
     if (words.length === 0) return props.commands;
     return props.commands.filter((c) => {
       const text = `${c.group} ${c.label} ${tl(c.group)} ${tl(c.label)} ${c.hint ?? ''}`.toLowerCase();
@@ -59,12 +69,12 @@ export function CommandPalette(props: { commands: Command[]; onClose(): void }) 
       >
         <header>
           <span class="title caps">{tl('Command')}</span>
-          <input ref={input} class="q" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} placeholder={tl('new chart, 4 hours, log scale, link blue…')} />
+          <input ref={input} class="q" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} placeholder={tradeOn() ? tl('new chart, 4 hours… or trade: buy 0.01 btc, chase sell $500…') : tl('new chart, 4 hours, log scale, link blue…')} />
         </header>
         <div ref={list} class="list">
           <For each={matches()} fallback={<div class="empty">{tl('No command matches “')}{query()}”.</div>}>
             {(c, i) => (
-              <div class="row" classList={{ cur: i() === cursor() }} data-cur={i() === cursor() ? '' : undefined} onMouseMove={() => setCursor(i())} onClick={() => run(c)}>
+              <div class="row" classList={{ cur: i() === cursor(), trade: c.group.startsWith('Trade'), warn: c.group === 'Trade ▲' }} data-cur={i() === cursor() ? '' : undefined} onMouseMove={() => setCursor(i())} onClick={() => run(c)}>
                 <span class="dim" style={{ 'min-width': '90px' }}>
                   {tl(c.group)}
                 </span>

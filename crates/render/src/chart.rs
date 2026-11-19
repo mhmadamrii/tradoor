@@ -227,6 +227,8 @@ pub struct Legend {
     pub bar_x: Option<f32>,
     /// The alert line under the pointer, and its y.
     pub alert: Option<(i64, f32)>,
+    /// A line the page drew that a drag acts on (an order system's), under the pointer, and its y.
+    pub live: Option<(i64, f32)>,
     /// The flow mark under the pointer: which one, and where it sits.
     pub flow: Option<(usize, f32, f32)>,
     /// The footprint cell under the pointer, as the screen groups it, for the
@@ -1477,6 +1479,18 @@ impl Chart {
     }
 
     /// The alert the pointer is on, by its line or by its badge, and its y.
+    /// The price at a height in the main pane, NaN when there is no pane.
+    pub fn price_at_y(&self, y: f32) -> f64 {
+        self.panes.first().map_or(f64::NAN, |p| p.scale.price(f64::from(y)))
+    }
+
+    /// The page's own line under the pointer (a negative id, not locked), and where it is drawn.
+    fn live_at(&self, x: f32, y: f32) -> Option<(i64, f32)> {
+        let id = self.drawing_at(x, y).filter(|id| *id < 0)?;
+        let shape = self.drawings.iter().find(|d| d.id == Some(id))?;
+        Some((id, self.place(shape, false)?.points.first()?.1))
+    }
+
     pub fn alert_handle_at(&self, x: f32, y: f32) -> Option<(i64, f32)> {
         self.alert_at(x, y).or_else(|| {
             let id = self.alert_badge_at(x, y)?;
@@ -3148,6 +3162,13 @@ impl Chart {
         let last = self.candles.last().map(|c| c.close);
         // A lower pane's values read to two places, as its axis has them.
         let precision = if index == 0 { self.precision() } else { 2 };
+        // A fill's arrow at its bar: a little under the low, or over the high, whatever its price.
+        if shape.style.at_bar && matches!(shape.kind, DrawingKind::MarkUp | DrawingKind::MarkDown) {
+            let bar = shape.points.first().and_then(|a| self.drawing_logical(shape, a.time)).and_then(|l| self.bar(l.round().max(0.0) as usize));
+            if let (Some(b), Some(p)) = (bar, points.first_mut()) {
+                p.1 = if shape.kind == DrawingKind::MarkUp { pane.scale.y(b.low) as f32 + 4.0 } else { pane.scale.y(b.high) as f32 - 4.0 };
+            }
+        }
         let fit = if shape.kind == DrawingKind::Regression && shape.points.len() >= 2 { self.regression(shape, &pane.scale) } else { None };
         let series = match shape.kind {
             DrawingKind::AnchoredVwap => self.anchored_vwap(shape, &pane.scale),
@@ -3309,6 +3330,7 @@ impl Chart {
             axis_x: pane.plot.w,
             bar_x: hovered.map(|i| self.time.x(i as f64) as f32),
             alert: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.alert_handle_at(x, y)),
+            live: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.live_at(x, y)),
             flow: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.flow_at(x, y)),
             footprint: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.footprint_at(x, y)),
             tpo: self
@@ -5205,6 +5227,19 @@ mod tests {
     }
 
     #[test]
+    fn a_trading_line_is_named_and_priced_at_its_right_end() {
+        let mut c = chart();
+        let price = c.panes[0].scale.price(180.0);
+        let mut line = DrawingShape::new(Some(-2_000_000), DrawingKind::Horizontal, vec![Anchor { time: c.times[10], price }]);
+        line.label = Some("Long 0.01 · +$2.10 (+0.30%) ≈ −".into());
+        line.style = DrawingStyle::from_pairs([("labelRight", "1"), ("priceLabels", "1"), ("dash", "dashed"), ("live", "entry"), ("textBg", "#000000")]);
+        c.set_drawings(vec![line]);
+        let frame = c.render(1_800_000_000_000).clone();
+        let t = frame.texts.iter().find(|t| t.text.starts_with("Long 0.01")).expect("the line's label");
+        assert!(t.align == Align::Right && t.text.ends_with(&format_price(price, Some(c.precision()))), "named and priced as one, at the right: {:?}", t.text);
+    }
+
+    #[test]
     fn clicking_a_level_selects_it_and_delete_asks_to_remove_it() {
         let mut c = chart();
         let price = c.panes[0].scale.price(180.0);
@@ -5692,6 +5727,18 @@ mod tests {
         assert_eq!(placed.series.len(), 2 * ((lb.round() - la.round()) as usize + 1), "a wick and a body for each bar in the range");
         assert!((placed.series[0].0 - placed.points[2].0).abs() < c.time.bar_spacing as f32, "the copy starts at the third point's bar");
         assert!((placed.series[1].1 - 220.0).abs() < 1.0, "its first bar opens at the third point's price: {:?}", placed.series[1]);
+    }
+
+    #[test]
+    fn a_fills_arrow_sits_under_its_bar_whatever_its_price() {
+        let mut c = chart();
+        let at = c.anchor_at(300.0, 100.0).unwrap();
+        let mut up = DrawingShape::new(Some(-5), DrawingKind::MarkUp, vec![at]);
+        up.style = DrawingStyle::from_pairs([("atBar", "1")]);
+        c.set_drawings(vec![up]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let bar = c.bar(c.drawing_logical(&c.drawings[0], at.time).unwrap().round() as usize).unwrap();
+        assert!((placed.points[0].1 - (c.panes[0].scale.y(bar.low) as f32 + 4.0)).abs() < 0.5, "under the low: {:?}", placed.points[0]);
     }
 
     #[test]

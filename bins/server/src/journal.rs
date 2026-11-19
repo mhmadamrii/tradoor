@@ -721,7 +721,7 @@ async fn minute_page(http: &reqwest::Client, m: &MarketRef, native: &str, from: 
 // ---------------------------------------------------------------- the API
 
 const COLUMNS: &str =
-    "id, drawing_id, market, side, timeframe, start_at, entry, stop, target, risk, qty, status, opened_at, closed_at, exit, fees, auto, strategy, notes, created_at, updated_at, legs, fills, leverage";
+    "id, drawing_id, market, side, timeframe, start_at, entry, stop, target, risk, qty, status, opened_at, closed_at, exit, fees, auto, strategy, notes, created_at, updated_at, legs, fills, leverage, source";
 
 fn row_json(r: &tokio_postgres::Row) -> Value {
     let market: String = r.get(2);
@@ -751,6 +751,8 @@ fn row_json(r: &tokio_postgres::Row) -> Value {
         "legs": r.get::<_, Value>(21),
         "fills": r.get::<_, Value>(22),
         "leverage": r.get::<_, f64>(23),
+        // Where a synced one came from, `venue:network`; the account in it is not sent back.
+        "synced": r.get::<_, Option<String>>(24).map(|s| s.split(':').take(2).collect::<Vec<_>>().join(":")),
     })
 }
 
@@ -878,6 +880,67 @@ pub async fn create(State(state): State<AppState>, headers: HeaderMap, Json(body
         )
         .await?;
     Ok((StatusCode::CREATED, Json(json!({ "trade": row_json(&row) }))))
+}
+
+/// Trades synced at most in one call: a trading account's history, in round trips.
+const MAX_SYNC: usize = 2_000;
+
+/// `POST /api/journal/sync` `{trades: [{source, market, side, entry, qty, openedAt, exit?, closedAt?, fees?, leverage?}]}`:
+/// a trading account's round trips, worked out in the browser from its fills,
+/// written once each by `source` and brought up to date on every call. Price
+/// does not decide them (`auto` off): what they made is what the exchange
+/// filled. An open one is open until a call closes it; its notes and strategy
+/// are the reader's, and left as they are.
+pub async fn sync(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
+    let owner = owner(&headers)?;
+    let list = body.get("trades").and_then(Value::as_array).ok_or_else(|| ApiError::bad_request("trades must be a list"))?;
+    if list.len() > MAX_SYNC {
+        return Err(ApiError::bad_request(format!("at most {MAX_SYNC} trades a call")));
+    }
+    let client = state.pool.get().await?;
+    account_only(&client, &owner).await?;
+    let now = now_ms();
+    let mut written = 0;
+    for t in list {
+        let b = t.as_object().ok_or_else(|| ApiError::bad_request("each trade must be a JSON object"))?;
+        let source = short_text(b, "source")?.filter(|s| !s.is_empty() && s.len() <= 200).ok_or_else(|| ApiError::bad_request("source is required"))?;
+        let market = b.get("market").and_then(Value::as_str).and_then(MarketRef::parse).ok_or_else(|| ApiError::bad_request("market must be venue:SYMBOL"))?.to_string();
+        let side = b.get("side").and_then(Value::as_str).and_then(Side::of).ok_or_else(|| ApiError::bad_request("side must be long or short"))?;
+        let need = |key: &str| finite(b, key)?.filter(|v| *v > 0.0).ok_or_else(|| ApiError::bad_request(format!("{key} must be a positive number")));
+        let (entry, qty) = (need("entry")?, need("qty")?);
+        let opened_at = finite(b, "openedAt")?.map(|v| v as i64).ok_or_else(|| ApiError::bad_request("openedAt is required"))?;
+        let exit = finite(b, "exit")?.filter(|v| *v > 0.0);
+        let closed_at = finite(b, "closedAt")?.map(|v| v as i64);
+        let fees = finite(b, "fees")?.unwrap_or(0.0).abs();
+        let leverage = finite(b, "leverage")?.filter(|v| *v > 0.0).unwrap_or(1.0);
+        // Closed: a win or a loss by what the fills made, after fees; break-even at nothing either way.
+        let status = match (exit, closed_at) {
+            (Some(x), Some(_)) => {
+                let made = match side {
+                    Side::Long => (x - entry) * qty,
+                    Side::Short => (entry - x) * qty,
+                } - fees;
+                if made.abs() < 1e-9 { "breakeven" } else if made > 0.0 { "win" } else { "loss" }
+            }
+            _ => "open",
+        };
+        let done = status != "open";
+        // No stop or target was set on the exchange: both at the entry, so no R is read into it.
+        client
+            .execute(
+                "INSERT INTO journal_trade (owner, source, market, side, start_at, entry, stop, target, risk, qty, status, opened_at, closed_at, exit, fees, auto, checked_until, created_at, updated_at, leverage)
+                 VALUES ($1, $2, $3, $4, $5, $6, $6, $6, 0, $7, $8, $5, $9, $10, $11, FALSE, $5, $12, $12, $13)
+                 ON CONFLICT (owner, source) WHERE source IS NOT NULL DO UPDATE SET
+                   market = EXCLUDED.market, side = EXCLUDED.side, entry = EXCLUDED.entry, stop = EXCLUDED.entry, target = EXCLUDED.entry,
+                   qty = EXCLUDED.qty, status = EXCLUDED.status, closed_at = EXCLUDED.closed_at, exit = EXCLUDED.exit, fees = EXCLUDED.fees,
+                   leverage = EXCLUDED.leverage, updated_at = EXCLUDED.updated_at
+                 WHERE (journal_trade.status, journal_trade.qty, journal_trade.exit, journal_trade.fees) IS DISTINCT FROM (EXCLUDED.status, EXCLUDED.qty, EXCLUDED.exit, EXCLUDED.fees)",
+                &[&owner, &source, &market, &side.id(), &opened_at, &entry, &qty, &status, &closed_at.filter(|_| done), &exit.filter(|_| done), &fees, &now, &leverage],
+            )
+            .await?;
+        written += 1;
+    }
+    Ok(Json(json!({ "synced": written })))
 }
 
 /// `PATCH /api/journal/{id}`: its strategy, notes or fees; its entry, stop or
