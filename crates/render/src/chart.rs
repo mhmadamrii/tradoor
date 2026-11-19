@@ -1121,8 +1121,10 @@ impl Chart {
                     let plot = FORMULA_MARKS[study.markers.len().min(FORMULA_MARKS.len() - 1)];
                     let tone = Tone::Rgba(int(color));
                     for (i, hit) in hits.iter().enumerate() {
+                        // The forming bar's too, past the closed ones, now that formulas run over it.
+                        let Some(time) = self.bar(i).map(|b| b.time) else { continue };
                         if *hit != 0.0 {
-                            study.markers.push(StudyMarker { time: self.candles[i].open_time, above: *above == "1", text: (*text).to_string(), tone, plot, hollow: false });
+                            study.markers.push(StudyMarker { time, above: *above == "1", text: (*text).to_string(), tone, plot, hollow: false });
                         }
                     }
                 }
@@ -2586,7 +2588,8 @@ impl Chart {
         if !tpo && !self.hidden.contains("ribbon") && !self.styles.of("ribbon", "marks").off {
             let (rising, falling) = (self.styles.color("ribbon", "bull", t.ribbon_fast).with_alpha(255), self.styles.color("ribbon", "bear", t.ribbon_slow).with_alpha(255));
             for cross in self.engine.crosses.iter().filter(|c| c.index >= i0 && c.index <= i1) {
-                let c = &self.candles[cross.index];
+                // A cross on the forming bar is past the closed candles: its bar is the live one.
+                let Some(c) = self.bar(cross.index) else { continue };
                 let x = self.time.x(cross.index as f64) as f32;
                 if cross.bull {
                     let tip = price.scale.y(c.low) as f32 + 6.0;
@@ -5180,6 +5183,25 @@ mod tests {
         assert!((c.panes[0].scale.y(points[1].price) - 150.0).abs() < 1e-6);
         assert_eq!(events[1], Event::ToolFinished);
         assert_eq!(c.tool(), None);
+    }
+
+    #[test]
+    fn a_ribbon_cross_on_the_forming_bar_is_drawn_not_a_crash() {
+        let mut c = Chart::new(ChartTimeframe::H1);
+        c.resize(1000.0, 600.0, 1.0);
+        // Falling for a long while: the fast line under the slow one.
+        let bars: Vec<Candle> = (0..300).map(|i| {
+            let p = 1000.0 - i as f64;
+            Candle { open_time: 1_700_000_000_000 - 1_700_000_000_000 % HOUR + i as i64 * HOUR, open: p + 0.5, high: p + 1.0, low: p - 1.0, close: p, volume: 1.0, quote_volume: None, taker_buy: None }
+        }).collect();
+        let forming = bars[299].open_time + HOUR;
+        c.set_candles(bars);
+        c.render(1_800_000_000_000);
+        // Then the forming bar leaps: the fast line crosses up on it, past the closed candles.
+        c.set_live(Some(LiveBar { open_time: forming, open: 701.0, high: 2000.0, low: 700.0, close: 2000.0, volume: 1.0, closed: false }));
+        c.settle_live(i64::MAX);
+        assert!(c.engine.crosses.iter().any(|x| x.index == 300), "the cross is on the forming bar: {:?}", c.engine.crosses.iter().map(|x| x.index).collect::<Vec<_>>());
+        c.render(1_800_000_000_000);
     }
 
     #[test]
