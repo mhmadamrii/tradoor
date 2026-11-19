@@ -16,6 +16,8 @@ export const PRESETS: Record<string, { kind: string; style: Style }> = {
   extended: { kind: 'trendline', style: { extendLeft: true, extendRight: true } },
   infoline: { kind: 'trendline', style: { stats: true, priceLabels: true } },
   angle: { kind: 'trendline', style: { angle: true } },
+  arrow: { kind: 'trendline', style: { rightArrow: true } },
+  highlighter: { kind: 'brush', style: { color: '#ffeb3b59', width: 8 } },
 };
 
 /** The kind the engine draws for a tool. */

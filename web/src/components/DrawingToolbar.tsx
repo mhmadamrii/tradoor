@@ -16,7 +16,7 @@ export function DrawingToolbar(props: { drawing: Drawing; onRestyle(patch: Style
       <Show when={!['long', 'short', 'text', 'measure'].includes(d().kind)}>
         <ColorField value={String(d().style.color ?? defaultStyle(d().kind).color ?? '#2962ff')} onChange={(v) => props.onRestyle({ color: v })} title={tl('Line colour')} />
         <select class="dinput narrow" data-tip="Thickness" value={String(d().style.width ?? defaultStyle(d().kind).width ?? 1.5)} onChange={(e) => props.onRestyle({ width: Number(e.currentTarget.value) })}>
-          <For each={[1, 1.5, 2, 3, 4]}>{(w) => <option value={w}>{w}{tl('px')}</option>}</For>
+          <For each={[1, 1.5, 2, 3, 4, 6, 8]}>{(w) => <option value={w}>{w}{tl('px')}</option>}</For>
         </select>
       </Show>
       <button data-tip="Settings (double-click the drawing)" disabled={d().id < 0} onClick={() => props.onSettings()}>

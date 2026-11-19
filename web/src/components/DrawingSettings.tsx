@@ -450,7 +450,7 @@ function LineField(props: { color: string; width: number; dash: Dash; set(key: s
     <>
       <ColorField value={props.color} onChange={(v) => props.set('color', v)} />
       <select class="dinput narrow" data-tip="Thickness" value={String(props.width)} onChange={(e) => props.set('width', Number(e.currentTarget.value))}>
-        <For each={[1, 1.5, 2, 3, 4]}>{(w) => <option value={w}>{w}{tl('px')}</option>}</For>
+        <For each={[1, 1.5, 2, 3, 4, 6, 8]}>{(w) => <option value={w}>{w}{tl('px')}</option>}</For>
       </select>
       <DashSelect value={props.dash} onChange={(v) => props.set('dash', v)} />
     </>

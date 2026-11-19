@@ -70,6 +70,8 @@ const TOOL_STEPS: Record<string, string> = {
   infoline: 'Info line: click the first point, then the second · right-click or esc cancels',
   extended: 'Extended line: click two points on it · right-click or esc cancels',
   angle: 'Trend angle: click the first point, then the second · right-click or esc cancels',
+  arrow: 'Arrow: click where it starts, then where it points · right-click or esc cancels',
+  highlighter: 'Highlighter: drag across the chart to mark it',
   rect: 'Zone: click one corner, then the opposite corner · right-click or esc cancels',
   fib: 'Fib: click the 100% end — where the move started — then the 0% end · right-click or esc cancels',
   text: 'Note: click where the note goes',
@@ -1948,7 +1950,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
           </Show>
           <Show when={tool() !== '' || selected() !== null || drawError() || replayPicking()}>
             <div class="hint" classList={{ 'over-replay': replayOpen() && !(footprintOn() && props.panel.footprintStats === true) }}>
-              {replayPicking() ? tlf('{0} the bar to replay from: every bar after it is hidden{1}', mobile() ? tl('Tap') : tl('Click'), mobile() ? '' : ' · esc cancels') : tool() ? (mobile() && tool() !== 'brush' ? TOUCH_STEPS : TOOL_STEPS[tool()]) : selected() !== null ? tl('Drawing selected · double-click for settings · Delete removes it, esc deselects') : ''}
+              {replayPicking() ? tlf('{0} the bar to replay from: every bar after it is hidden{1}', mobile() ? tl('Tap') : tl('Click'), mobile() ? '' : ' · esc cancels') : tool() ? (mobile() && engineKind(tool()) !== 'brush' ? TOUCH_STEPS : TOOL_STEPS[tool()]) : selected() !== null ? tl('Drawing selected · double-click for settings · Delete removes it, esc deselects') : ''}
               <Show when={drawError()}>{(err) => <span class="warn"> ▲ {err()}</span>}</Show>
             </div>
           </Show>

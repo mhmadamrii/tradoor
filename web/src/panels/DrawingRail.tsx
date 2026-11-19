@@ -33,6 +33,8 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'long', icon: 'long', title: 'Long position — click the entry; drag its handles to set stop, target and width' },
   { kind: 'short', icon: 'short', title: 'Short position — click the entry; drag its handles to set stop, target and width' },
   { kind: 'brush', icon: 'brush', title: 'Brush — drag to draw freehand' },
+  { kind: 'highlighter', icon: 'highlighter', title: 'Highlighter — drag to mark over the candles, wide and see-through' },
+  { kind: 'arrow', icon: 'arrowline', title: 'Arrow — click where it starts, then where it points' },
 ];
 
 /** The tool's name with its Alt shortcut: `Trendline (Alt+T) — click the two ends…`. */
@@ -48,8 +50,9 @@ export const GROUPS: { name: string; kinds: string[] }[] = [
   { name: 'Lines', kinds: ['trendline', 'trendray', 'infoline', 'extended', 'angle', 'horizontal', 'ray', 'vertical', 'cross'] },
   { name: 'Channels', kinds: ['channel'] },
   { name: 'Fibonacci', kinds: ['fib'] },
+  { name: 'Brushes', kinds: ['brush', 'highlighter'] },
+  { name: 'Arrows', kinds: ['arrow'] },
   { name: 'Shapes', kinds: ['rect', 'path'] },
-  { name: 'Brushes', kinds: ['brush'] },
   { name: 'Text and notes', kinds: ['text'] },
   { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure'] },
 ];

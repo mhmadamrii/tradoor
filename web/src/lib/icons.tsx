@@ -10,6 +10,8 @@ const PATHS = {
   trendray: 'M7.2 16.8L21 3M3 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
   extended: 'M2 21L22 3M6 17.4a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0-3.2 0M14.8 9.4a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0-3.2 0',
   infoline: 'M3 21L13 11M14 3h7v6h-7z',
+  arrowline: 'M4 20L19 5M11 5h8v8',
+  highlighter: 'M14.5 3.5l6 6-7.5 7.5H7v-6zM4 21h9',
   angle: 'M4 19L19 5M4 19h16M12 19a8 8 0 0 0-2.3-5.6',
   ray: 'M5 12h16M17 8l4 4-4 4',
   rect: 'M4 6h16v12H4z',
