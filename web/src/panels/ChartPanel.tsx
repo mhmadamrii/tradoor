@@ -6,7 +6,8 @@
 import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from 'solid-js';
 import { lazy } from '../lib/lazy';
 import { armedTool, chartControllers, controllersChanged, covered, drawingsChanged, magnet, mobile, setArmedTool, setControllersChanged, setDrawingsChanged, setMobileMenu, setOverlay, setShownPattern, setShownTrades, setStudyEditing, sharedRail, shownPattern, shownTrades, smoothZoom, studyEditing, type ShownPattern, type ShownTrades } from '../app/ui';
-import { DrawingRail } from './DrawingRail';
+import { Brand } from '../components/Brand';
+import { drawFavs, DrawingRail, favsOnChart, toolName, TOOLS } from './DrawingRail';
 import { call, debugClient, heardAt, holdChart, lastPrice, releaseChart, send } from '../engine/client';
 import type { BacktestResult, ChartEvent, ChartStatus, DrawingPoint, Legend, LiveStatus, PointerKind, ReplayState, StrategyRun, StudyMeta, TpoHover } from '../engine/protocol';
 import type { BacktestState } from '../lib/backtest-state';
@@ -49,6 +50,7 @@ const StudySettings = lazy(() => import('../components/StudySettings').then((m) 
 const AlertStyleSettings = lazy(() => import('../components/AlertStyleSettings').then((m) => ({ default: m.AlertStyleSettings })));
 const ChartMark = lazy(() => import('../components/ChartMark').then((m) => ({ default: m.ChartMark })));
 const DrawingToolbar = lazy(() => import('../components/DrawingToolbar').then((m) => ({ default: m.DrawingToolbar })));
+const DrawingSheet = lazy(() => import('../components/DrawingSheet').then((m) => ({ default: m.DrawingSheet })));
 const StrategyTester = lazy(() => import('../components/StrategyTester').then((m) => ({ default: m.StrategyTester })));
 
 
@@ -1444,6 +1446,8 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
   };
 
   /** The timeframe menu, under the button that asked for it. */
+  /** A phone's drawing tools, open in a sheet from the bottom. */
+  const [drawSheet, setDrawSheet] = createSignal(false);
   const openTfMenu = (b: HTMLElement) => setTfMenu((v) => (v === null ? b.offsetLeft - (b.parentElement?.scrollLeft ?? 0) : null));
 
   /**
@@ -1543,8 +1547,12 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
           <button class="iconbtn burger" aria-label={tl('Menu')} onClick={() => setMobileMenu(true)}>
             <Icon name="menu" size={17} />
           </button>
+          <Show when={!props.training}>
+            <Brand />
+          </Show>
         </Show>
-        <Show when={!props.training} fallback={props.training!.toolbar}>
+        {/* A phone keeps the market and its timeframe in the bottom bar, under the thumb. */}
+        <Show when={!props.training && !mobile()} fallback={props.training?.toolbar}>
         <button class="symbol" data-tip="Change symbol — or just start typing" onClick={() => setOverlay({ kind: 'symbol', panelId: id, initial: '' })}>
           <span>{symbolOf(market())}</span>
           <Icon name="chevron" size={10} />
@@ -1722,7 +1730,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
 
       <Show when={tfMenu()} keyed>
         {(left) => (
-          <div class="menu tf-menu" ref={fitMenu} style={{ left: `${left}px`, top: '25px' }} onPointerDown={(e) => e.stopPropagation()}>
+          <div class="menu tf-menu" classList={{ up: mobile() }} ref={fitMenu} style={mobile() ? { left: `${left}px`, bottom: '40px' } : { left: `${left}px`, top: '25px' }} onPointerDown={(e) => e.stopPropagation()}>
             <For each={[0, 1, 2, 3, 4]}>
               {(group) => (
                 <div class="group">
@@ -1766,7 +1774,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
 
       <div class="chartwrap">
         {/* Its own rail when it is the only chart; several share one at the workspace's left. */}
-        <Show when={props.training || !sharedRail()}>
+        <Show when={(props.training || !sharedRail()) && !mobile()}>
           <DrawingRail target={() => (controllersChanged(), chartControllers.get(id))} />
         </Show>
 
@@ -2323,14 +2331,50 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         }}
       </Show>
 
-      <div class="rangebar">
-        <For each={RANGES}>
-          {(r) => (
-            <button class="tb num range" data-tip={r.days === null ? 'Every loaded bar' : tlf('Zoom to the last {0}', r.label)} onClick={() => showRange(r.days)}>
-              {tl(r.label)}
-            </button>
-          )}
-        </For>
+      <Show when={drawSheet()}>
+        <DrawingSheet target={() => (controllersChanged(), chartControllers.get(id))} onClose={() => setDrawSheet(false)} />
+      </Show>
+      <div class="rangebar" classList={{ mbar: mobile() }}>
+        <Show
+          when={!mobile()}
+          fallback={
+            <>
+              <Show when={!props.training}>
+                <button class="symbol" onClick={() => setOverlay({ kind: 'symbol', panelId: id, initial: '' })}>
+                  <span>{symbolOf(market())}</span>
+                  <Icon name="chevron" size={10} />
+                </button>
+                <VenueTag market={market()} />
+                <WatchlistToggle market={market()} />
+                <button class="tb num on tf-now" aria-label={tlf('{0} — every timeframe', tfName(timeframe()))} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => openTfMenu(e.currentTarget)}>
+                  <span>{tfLabel(timeframe())}</span>
+                  <Icon name="chevron" size={10} />
+                </button>
+              </Show>
+              <button class="tb draw-btn" aria-label={tl('Drawing tools')} onClick={() => setDrawSheet(true)}>
+                <Icon name="tools" size={18} stroke={1.6} />
+                <Icon name="chevron" size={10} />
+              </button>
+              <Show when={favsOnChart()}>
+                <For each={drawFavs()}>
+                  {(k) => (
+                    <button class="tb draw-fav" classList={{ on: armedTool() === k }} aria-label={tl(toolName(k))} onClick={() => setArmedTool(armedTool() === k ? '' : k)}>
+                      <Icon name={TOOLS.find((t) => t.kind === k)!.icon} size={16} />
+                    </button>
+                  )}
+                </For>
+              </Show>
+            </>
+          }
+        >
+          <For each={RANGES}>
+            {(r) => (
+              <button class="tb num range" data-tip={r.days === null ? 'Every loaded bar' : tlf('Zoom to the last {0}', r.label)} onClick={() => showRange(r.days)}>
+                {tl(r.label)}
+              </button>
+            )}
+          </For>
+        </Show>
         <span class="spacer" />
         <Show when={status().error}>{(err) => <span class="warn" data-tip={err()}>▲ {err()} · </span>}</Show>
         <span class="dim num bars-info" data-tip={status().source === 'archive' ? 'Stored history, with the exchange filling the newest bars' : status().source === 'ratio' ? 'One market priced in the other: each bar of the first divided by the same bar of the second' : 'Candles from the exchange; this market is not archived here'}>
@@ -2357,13 +2401,13 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
           data-tip="Auto scale — the price axis follows the bars on screen. Dragging the chart up or down, or dragging the price axis, turns it off; click to turn it back on."
           onClick={() => send({ t: 'autoScale', id: sid })}
         >
-          AUTO
+          <span>AUTO</span>
         </button>
         <button class="tb" classList={{ on: !props.panel.log }} data-tip="Linear price axis" onClick={() => patchPanel(id, { log: false })}>
-          LIN
+          <span>LIN</span>
         </button>
         <button class="tb" classList={{ on: props.panel.log }} data-tip="Logarithmic price axis — equal percentage moves take equal space" onClick={() => patchPanel(id, { log: true })}>
-          LOG
+          <span>LOG</span>
         </button>
         <button class="tb" data-tip="Reset view — the last bars, every axis autoscaling" onClick={() => send({ t: 'resetView', id: sid })}>
           <Icon name="reset" size={11} />

@@ -774,10 +774,30 @@ table.venues tr.off td { color: var(--dim); }
   .toolbar > * { flex-shrink: 0; }
   .toolbar .tb, .toolbar .symbol { min-height: 28px; }
   .burger { min-width: 30px; color: var(--text); }
+  .toolbar .brand { align-self: stretch; margin: 0 6px 0 2px; }
   /* Drawing tools under a fingertip rather than a pointer. */
   .rail { flex: 0 0 40px; }
   .rail button { width: 34px; height: 34px; }
   .rail button svg { width: 20px; height: 20px; }
+  /* The bottom bar is the phone's: the market, its timeframe and the drawing
+     tools under the thumb (the rail and the zoom ranges have no room here), and
+     the panel's name in the status bar under it only repeats it. */
+  .statusbar > .caps { display: none; }
+  .rangebar.mbar { flex: 0 0 40px; height: 40px; gap: 2px; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
+  .rangebar.mbar::-webkit-scrollbar { display: none; }
+  .rangebar.mbar > * { flex-shrink: 0; }
+  .rangebar.mbar .symbol { min-height: 32px; font-size: .875rem; }
+  .rangebar.mbar .venue .kind, .rangebar.mbar .venue-name { display: none; }
+  .rangebar.mbar .tf-now { display: inline-flex; align-items: center; min-height: 30px; margin: 0 4px; padding: 0 8px; font-size: .75rem; }
+  /* Capitals and digits have no descenders: trimmed to their cap height, they sit in the middle of the button. */
+  .rangebar.mbar .tb > span { text-box: trim-both cap alphabetic; }
+  .rangebar.mbar .draw-fav { justify-content: center; width: 34px; height: 32px; padding: 0; color: var(--muted); }
+  .rangebar.mbar .draw-fav.on { background: var(--primary); color: var(--bg); }
+  /* The sheet's button stays as it is: a pencil and the arrow that says it opens upward. */
+  .rangebar.mbar .draw-btn { justify-content: center; gap: 2px; height: 32px; padding: 0 6px; border: 1px solid var(--border); color: var(--text); }
+  .rangebar.mbar .draw-btn svg:last-child { transform: rotate(180deg); color: var(--muted); }
+  .rangebar.mbar .tb:not(.tf-now):not(.draw-btn):not(.draw-fav) { min-height: 30px; padding: 0 6px; font-size: .6875rem; }
+  .menu.tf-menu.up { max-height: 60dvh; overflow-y: auto; }
   .dialog { max-height: 88vh; max-height: 88dvh; }
   .backdrop { padding: 4vh 8px 8px; }
   /* A phone has no room for a title, a field, seven exchanges and a close in

@@ -9,6 +9,8 @@ const PATHS = {
   rect: 'M4 6h16v12H4z',
   fib: 'M3 5h18M3 9.5h18M3 12h18M3 14.5h18M3 19h18',
   channel: 'M3 15L15 5M9 19L21 9',
+  /** The drawing tools: a pencil over the line it drew, a path of straight legs. */
+  tools: 'M14.5 3l3 3L9 14.5H6v-3zM13 4.5l3 3M3 21l4.5-3 4 2 4.5-3.5 5 2.5',
   magnet: 'M5 4h4v8a3 3 0 0 0 6 0V4h4v8a7 7 0 0 1-14 0zM5 8h4M15 8h4',
   text: 'M5 5h14M12 5v14M9 19h6',
   measure: 'M4 17L17 4l3 3L7 20zM8 13l2 2M11 10l2 2M14 7l2 2',

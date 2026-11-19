@@ -5,12 +5,13 @@
  * for all of them, as TradingView does: the tool armed there draws on whichever
  * chart is clicked next, and the rest act on the chart in use.
  */
-import { For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { armedTool, cycleMagnet, magnet, setArmedTool, TOOL_KEYS, type ChartController, type MagnetMode } from '../app/ui';
 import { Icon, type IconName } from '../lib/icons';
 import { tlf } from '../lib/i18n';
+import { readJson, readPref, writePref } from '../lib/prefs';
 
-const TOOLS: { kind: string; icon: IconName; title: string }[] = [
+export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: '', icon: 'pointer', title: 'Select and pan (Esc) — click a drawing to select it, then Delete to remove it' },
   { kind: 'path', icon: 'path', title: 'Path — click each turn, then Enter or double-click to finish' },
   { kind: 'trendline', icon: 'trendline', title: 'Trendline — click the two ends; anchored to time and price' },
@@ -34,7 +35,24 @@ const toolTip = (t: { kind: string; title: string }): string => {
   return [`${name} (Alt+${key.slice(3)})`, ...rest].join(' — ');
 };
 
-const MAGNET_TIP: Record<MagnetMode, string> = {
+/** The tool's own name, the words before its description. */
+export const toolName = (kind: string): string => TOOLS.find((t) => t.kind === kind)?.title.split(' — ')[0] ?? kind;
+
+/** A phone's starred tools (DrawingSheet), and whether they sit in the chart's bottom bar for one tap. */
+const savedFavs = readJson('drawFavs');
+export const [drawFavs, setDrawFavs] = createSignal<string[]>(Array.isArray(savedFavs) ? savedFavs.filter((k): k is string => TOOLS.some((t) => t.kind === k && k !== '')) : ['trendline', 'horizontal', 'rect']);
+export const [favsOnChart, setFavsOnChart] = createSignal(readPref('drawFavsOnChart') !== '0');
+export const toggleDrawFav = (kind: string) => {
+  const next = drawFavs().includes(kind) ? drawFavs().filter((k) => k !== kind) : [...drawFavs(), kind];
+  setDrawFavs(next);
+  writePref('drawFavs', JSON.stringify(next));
+};
+export const showFavsOnChart = (on: boolean) => {
+  setFavsOnChart(on);
+  writePref('drawFavsOnChart', on ? '1' : '0');
+};
+
+export const MAGNET_TIP: Record<MagnetMode, string> = {
   off: 'Magnet off (Alt+G) — click for a weak magnet, or hold Ctrl while drawing for one',
   weak: 'Weak magnet (Alt+G) — anchors near a bar take its open, high, low or close; elsewhere a whole tick. Click for strong',
   strong: 'Strong magnet (Alt+G) — anchors always take the nearest open, high, low or close. Click to turn it off',
