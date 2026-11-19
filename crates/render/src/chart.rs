@@ -3,6 +3,7 @@
 
 use tradoor_core::num::Within;
 use tradoor_core::chart::{engine_series_with, EngineSeries};
+use tradoor_core::indicators::Series;
 use tradoor_core::format::{format_compact, format_countdown, format_price, format_turnover, price_precision};
 use tradoor_core::live::LiveBar;
 use tradoor_core::indicators::profile::value_area;
@@ -39,6 +40,45 @@ const SHORT_BAR_MS: i64 = 15 * 60_000;
 const RIGHT_MARGIN_BARS: f64 = 2.0;
 /// The tradoor mark's size, in CSS pixels.
 const MARK: f32 = 34.0;
+
+/// Whether a study's figures move with the forming bar. VWAP levels read their
+/// own hourly and daily bars; volume delta waits for a bar's buyers, which only
+/// a closed one reports.
+fn reads_bars(kind: StudyKind) -> bool {
+    !matches!(kind, StudyKind::VwapLevels | StudyKind::VolumeDelta | StudyKind::VisibleProfile | StudyKind::Flow | StudyKind::Formula)
+}
+
+/// The bars a study is worked out over: the closed ones and the forming one,
+/// but closed alone for volume delta, and for open interest, which folds the
+/// forming bar in itself.
+fn study_bars<'a>(kind: StudyKind, closed: &'a [Candle], bars: &'a [Candle]) -> &'a [Candle] {
+    if matches!(kind, StudyKind::OpenInterest | StudyKind::VolumeDelta) { closed } else { bars }
+}
+
+/// How often, at most, a tick within the forming bar moves the indicators:
+/// with months of minutes held, the ribbon alone takes milliseconds.
+const SETTLE_MS: i64 = 100;
+
+/// The bars a study is first worked out over on a tick, doubled until they
+/// agree with the whole; from half of all the bars on, it is the whole.
+const TAIL: usize = 512;
+
+/// `part`, a series worked out over the bars from `from` on, over `whole` from
+/// its middle on — where it agrees with `whole` there, so that the bars before
+/// were enough to settle it. Averages that carry all of history converge on the
+/// whole's figures; one anchored further back than the part reaches does not.
+fn splice(whole: &mut Series, part: &Series, from: usize) -> bool {
+    let mid = part.len() / 2;
+    let near = |(a, b): (&Option<f64>, &Option<f64>)| match (a, b) {
+        (Some(a), Some(b)) => (a - b).abs() <= 1e-9 * a.abs().max(b.abs()),
+        (a, b) => a == b,
+    };
+    if whole.len() != from + part.len() || !whole[from + mid..].iter().zip(&part[mid..]).take(8).all(near) {
+        return false;
+    }
+    whole[from + mid..].copy_from_slice(&part[mid..]);
+    true
+}
 
 /// Where the mark stands: bottom left of the price pane, where it has room —
 /// above `bottom`, the footprint's stats table where it is shown, whose names it covered.
@@ -492,6 +532,19 @@ pub struct Chart {
     level_bars: [Vec<Candle>; 2],
     times: Vec<f64>,
     live: Option<LiveBar>,
+    /// The closed bars and the forming one after them: what the indicators read,
+    /// so their lines run to the last candle drawn and move with it.
+    bars: Vec<Candle>,
+    /// The forming bar moved since the indicators last read it. They are worked
+    /// out again as it is drawn, not once a trade, and within one bar at most
+    /// every `SETTLE_MS`.
+    live_stale: bool,
+    settled_at: i64,
+    /// The forming bar the studies were last worked out with, by open time.
+    studied_live: Option<i64>,
+    /// How many of the last bars each study is worked out over on a tick
+    /// within the forming bar; see `TAIL`.
+    tails: Vec<usize>,
     liquidations: Vec<Liquidation>,
     /// Added to a time before it is written on the axis: the reader's time zone.
     utc_offset: i64,
@@ -606,6 +659,11 @@ impl Chart {
             candles: Vec::new(),
             times: Vec::new(),
             live: None,
+            bars: Vec::new(),
+            live_stale: false,
+            settled_at: 0,
+            studied_live: None,
+            tails: Vec::new(),
             liquidations: Vec::new(),
             utc_offset: 0,
             tpo: None,
@@ -742,6 +800,8 @@ impl Chart {
             self.timeframe = timeframe;
             self.view_ready = false;
             self.live = None;
+            self.sync_bars();
+            self.live_stale = true;
             self.placed.clear();
             self.draft = None;
             // The old bars' footprint would stand between the new candles until
@@ -766,8 +826,12 @@ impl Chart {
             self.history_asked = None;
         }
         self.precision = price_precision(self.candles.iter().rev().take(2000).flat_map(|c| [c.open, c.high, c.low, c.close]));
+        self.bars.clone_from(&self.candles);
+        self.sync_bars();
         self.refresh_engine();
         self.studies = self.compute_studies(&self.study_specs);
+        self.studied_live = self.live.map(|l| l.open_time);
+        self.live_stale = false;
         if self.candles.is_empty() {
             self.view_ready = false;
             // Another market on its way: the last one's footprint is not its.
@@ -780,7 +844,7 @@ impl Chart {
     }
 
     fn refresh_engine(&mut self) {
-        self.engine = engine_series_with(&self.candles, self.styles.lengths());
+        self.engine = engine_series_with(&self.bars, self.styles.lengths());
         self.ribbon = ribbon_runs(&self.engine.ema12, &self.engine.ema25);
     }
 
@@ -824,43 +888,90 @@ impl Chart {
         &self.candles
     }
 
-    /// The forming bar, drawn after the closed ones. Indicators stop at the last
-    /// CLOSED bar: the forming one can still change.
+    /// The forming bar, drawn after the closed ones. The indicators read it too,
+    /// as the bar it is so far: their last values move with it until it closes.
     pub fn set_live(&mut self, live: Option<LiveBar>) {
         let live = live.filter(|l| self.candles.last().is_none_or(|c| l.open_time > c.open_time));
         if live != self.live {
-            let same_bar = live.zip(self.live).is_some_and(|(a, b)| a.open_time == b.open_time);
             // A trade at a price the bar has already seen moves its volume alone:
-            // with no volume drawn, nothing on screen changes and nothing is redrawn.
-            let unseen = same_bar
-                && live.zip(self.live).is_some_and(|(a, b)| (a.open, a.high, a.low, a.close) == (b.open, b.high, b.low, b.close))
+            // with no volume drawn and no study to read it, nothing on screen
+            // changes and nothing is redrawn.
+            let unseen = live.zip(self.live).is_some_and(|(a, b)| a.open_time == b.open_time && (a.open, a.high, a.low, a.close) == (b.open, b.high, b.low, b.close))
                 && self.hidden.contains("volume")
                 && self.tpo().is_none()
-                && !self.footprint_shown;
+                && !self.footprint_shown
+                && self.studies.iter().all(|s| self.hidden.contains(&s.id));
             self.live = live;
+            self.sync_bars();
             if unseen {
                 return;
             }
-            // Open interest runs into the forming bar, and in dollars moves with
-            // its price: a tick within the bar moves that bar's figure alone.
-            if same_bar {
-                self.refresh_open_interest_live();
-            } else {
-                self.refresh_open_interest();
-            }
+            self.live_stale = true;
             self.touch();
+        }
+    }
+
+    /// The forming bar as a candle after the closed ones, or none.
+    fn sync_bars(&mut self) {
+        self.bars.truncate(self.candles.len());
+        if let Some(l) = self.live {
+            self.bars.push(Candle { open_time: l.open_time, open: l.open, high: l.high, low: l.low, close: l.close, volume: l.volume, quote_volume: None, taker_buy: None });
+        }
+    }
+
+    /// The indicators worked out again with the forming bar as it now stands.
+    /// A bar just opened has them all worked out whole. A tick within it moves
+    /// the last figures alone: the closed bars stand, and working months of
+    /// minutes out again on every trade was more than a frame has. So each is
+    /// worked out over the last bars only, as few as agree with the whole.
+    fn settle_live(&mut self, now: i64) {
+        let same_bar = self.live.is_some() && self.live.map(|l| l.open_time) == self.studied_live;
+        if !self.live_stale || same_bar && now - self.settled_at < SETTLE_MS {
+            return;
+        }
+        self.live_stale = false;
+        self.settled_at = now;
+        self.studied_live = self.live.map(|l| l.open_time);
+        let n = self.bars.len();
+        // From bar 0 is the whole.
+        let from = |tail: usize| if tail * 2 < n { n - tail } else { 0 };
+        // The ribbon and the long average are worked out whole: three averages
+        // over the bars held are cheap, and nothing while neither is drawn.
+        if !(same_bar && self.hidden.contains("ribbon") && self.hidden.contains("ema200")) {
+            self.refresh_engine();
+        }
+        self.tails.resize(self.studies.len(), TAIL);
+        let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
+        for ((spec, study), kept) in self.study_specs.iter().zip(self.studies.iter_mut()).zip(self.tails.iter_mut()) {
+            let oi = spec.kind == StudyKind::OpenInterest;
+            // Sessions, levels and swings stand as the bar opened.
+            let drawn = !(study.boxes.is_empty() && study.segments.is_empty() && study.markers.is_empty());
+            if self.hidden.contains(&study.id) || !reads_bars(spec.kind) || same_bar && (drawn || oi && open_interest_live(spec, study, &self.candles, &inputs)) {
+                continue;
+            }
+            let mut tail = if same_bar && !oi { *kept } else { n };
+            loop {
+                let at = from(tail);
+                let part = compute_study_with(spec, if at == 0 { study_bars(spec.kind, &self.candles, &self.bars) } else { &self.bars[at..] }, &inputs);
+                if at == 0 {
+                    *study = part;
+                } else if !(part.lines.len() == study.lines.len() && study.lines.iter_mut().zip(&part.lines).all(|(w, p)| splice(&mut w.values, &p.values, at))) {
+                    tail *= 2;
+                    continue;
+                }
+                break;
+            }
+            if same_bar && !oi {
+                *kept = tail;
+            }
         }
     }
 
     /// Summed open interest, `(time, [open, high, low, close])` steps oldest first.
     pub fn set_open_interest(&mut self, steps: Vec<(i64, [f64; 4])>) {
         self.open_interest = steps;
-        self.refresh_open_interest();
-        self.touch();
-    }
-
-    fn refresh_open_interest(&mut self) {
         self.refresh_studies(StudyKind::OpenInterest);
+        self.touch();
     }
 
     /// Recompute the shown studies of one kind, after what they read changed.
@@ -871,19 +982,7 @@ impl Chart {
         let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
         for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
             if spec.kind == kind && !self.hidden.contains(&study.id) {
-                *study = compute_study_with(spec, &self.candles, &inputs);
-            }
-        }
-    }
-
-    /// The shown open interest's forming bar, after a tick within it: the bars
-    /// before it stand, and working them all out again on every trade of a busy
-    /// market with months of minutes loaded was most of what the chart did.
-    fn refresh_open_interest_live(&mut self) {
-        let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
-        for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
-            if spec.kind == StudyKind::OpenInterest && !self.hidden.contains(&study.id) && !open_interest_live(spec, study, &self.candles, &inputs) {
-                *study = compute_study_with(spec, &self.candles, &inputs);
+                *study = compute_study_with(spec, study_bars(kind, &self.candles, &self.bars), &inputs);
             }
         }
     }
@@ -895,7 +994,7 @@ impl Chart {
     /// Every study worked out but the hidden ones, which wait until shown.
     fn compute_studies(&self, specs: &[StudySpec]) -> Vec<ComputedStudy> {
         let inputs = self.study_inputs();
-        specs.iter().map(|s| if self.hidden.contains(&s.id()) { idle_study(s) } else { compute_study_with(s, &self.candles, &inputs) }).collect()
+        specs.iter().map(|s| if self.hidden.contains(&s.id()) { idle_study(s) } else { compute_study_with(s, study_bars(s.kind, &self.candles, &self.bars), &inputs) }).collect()
     }
 
     /// One liquidation, to ping beside the candles until it fades.
@@ -1078,6 +1177,8 @@ impl Chart {
         if specs != self.study_specs {
             self.studies = self.compute_studies(&specs);
             self.study_specs = specs;
+            self.tails.clear();
+            self.studied_live = self.live.map(|l| l.open_time);
             self.touch();
         }
     }
@@ -1089,7 +1190,7 @@ impl Chart {
         let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
         for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
             match (was.contains(&study.id), self.hidden.contains(&study.id)) {
-                (true, false) => *study = compute_study_with(spec, &self.candles, &inputs),
+                (true, false) => *study = compute_study_with(spec, study_bars(spec.kind, &self.candles, &self.bars), &inputs),
                 (false, true) => *study = idle_study(spec),
                 _ => {}
             }
@@ -1630,7 +1731,7 @@ impl Chart {
 
     /// Something changed, or the countdown needs its next second.
     pub fn needs_render(&self, now: i64) -> bool {
-        self.dirty || (!self.candles.is_empty() && now.div_euclid(1000) != self.last_second)
+        self.dirty || (!self.candles.is_empty() && now.div_euclid(1000) != self.last_second) || self.live_stale && now - self.settled_at >= SETTLE_MS
     }
 
     /// A liquidation ping is sliding in or fading, or has just gone: the feed's
@@ -1895,6 +1996,7 @@ impl Chart {
 
     pub fn render(&mut self, now: i64) -> &Frame {
         self.dirty = false;
+        self.settle_live(now);
         self.last_second = now.div_euclid(1000);
         let mut frame = std::mem::take(&mut self.frame);
         frame.begin(self.width, self.height, self.dpr, self.theme.background);
@@ -4175,8 +4277,9 @@ mod tests {
         c.set_hidden("stochrsi:14:14:3:3");
         assert!(!c.studies[0].lines.is_empty() && c.studies[1].lines.is_empty(), "shown again, worked out at once");
         c.set_live(Some(tick(132.5)));
+        c.settle_live(i64::MAX);
         let ticked = c.studies[0].clone();
-        c.refresh_open_interest();
+        c.refresh_studies(StudyKind::OpenInterest);
         assert_eq!(ticked.candles, c.studies[0].candles, "the forming bar alone, as the whole would have it");
         assert_eq!(ticked.lines.last().map(|l| l.values.clone()), c.studies[0].lines.last().map(|l| l.values.clone()));
         // The steps from the forming bar's open on, 500 to 519, in dollars at its last price.
@@ -6023,6 +6126,65 @@ mod tests {
         assert_eq!(c.legend().index, Some(500));
         c.set_live(Some(LiveBar { open_time: last.open_time, open: 1.0, high: 1.0, low: 1.0, close: 1.0, volume: 1.0, closed: false }));
         assert!(c.live.is_none(), "a bar that is already stored is not forming");
+    }
+
+    #[test]
+    fn the_indicators_run_to_the_forming_bar_and_move_with_it() {
+        const T: i64 = 1_800_000_000_000;
+        let mut c = chart();
+        c.set_studies("sma:3,bb:20:2");
+        let n = c.candles().len();
+        let last = *c.candles().last().unwrap();
+        let closes: Vec<f64> = c.candles()[n - 2..].iter().map(|b| b.close).collect();
+        let tick = |close: f64| LiveBar { open_time: last.open_time + HOUR, open: close, high: close, low: close, close, volume: 1.0, closed: false };
+        c.set_live(Some(tick(200.0)));
+        c.render(T);
+        let sma = |c: &Chart| c.studies[0].lines[0].values.clone();
+        assert_eq!(sma(&c).len(), n + 1);
+        let near = |v: Option<f64>, want: f64| v.is_some_and(|v| (v - want).abs() < 1e-9);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 200.0) / 3.0));
+        assert_eq!(c.engine.ema12.len(), n + 1, "the ribbon too");
+        c.set_live(Some(tick(230.0)));
+        assert_eq!(c.studies[0].lines[0].values.len(), n + 1);
+        c.render(T + 50);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 200.0) / 3.0), "not yet: a tick within the bar waits its turn");
+        assert!(!c.needs_render(T + 60) && c.needs_render(T + 100));
+        c.render(T + 100);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 230.0) / 3.0), "a tick within the bar moves it");
+        assert!(c.studies[1].lines.iter().all(|l| l.values.len() == n + 1));
+        c.set_live(None);
+        c.render(T + 200);
+        assert_eq!(sma(&c).len(), n, "gone with the forming bar");
+    }
+
+    #[test]
+    fn a_tick_within_the_bar_works_the_last_bars_out_as_the_whole_would() {
+        let mut c = Chart::new(ChartTimeframe::H1);
+        c.resize(1000.0, 600.0, 1.0);
+        c.set_candles(candles(6000));
+        c.set_studies("ema:200,sma:50,bb:20:2,rsi:14,stochrsi:14:14:3:3,macd:12:26:9,atr:14,keltner:20:2:10,ichimoku:9:26:52:26,vwap:0:1:2:3");
+        let last = *c.candles().last().unwrap();
+        let tick = |close: f64| LiveBar { open_time: last.open_time + HOUR, open: 400.0, high: 420.0, low: 380.0, close, volume: 50.0, closed: false };
+        c.set_live(Some(tick(400.0)));
+        c.render(0);
+        for (k, close) in [410.0, 385.5, 419.0].into_iter().enumerate() {
+            c.set_live(Some(tick(close)));
+            c.render(1_000 * (k as i64 + 1));
+            assert!(c.tails.iter().any(|t| *t < 6000 / 2), "worked out over the last bars");
+            let inputs = c.study_inputs();
+            for (spec, study) in c.study_specs.iter().zip(&c.studies) {
+                let whole = compute_study_with(spec, &c.bars, &inputs);
+                for (a, b) in study.lines.iter().zip(&whole.lines) {
+                    assert_eq!(a.values.len(), b.values.len());
+                    for (x, y) in a.values.iter().zip(&b.values) {
+                        assert!(x.zip(*y).map_or(x == y, |(x, y)| (x - y).abs() <= 1e-6 * x.abs().max(1.0)), "{} {}: {x:?} against {y:?}", study.id, a.key);
+                    }
+                }
+            }
+            let whole = engine_series_with(&c.bars, c.styles.lengths());
+            assert!((c.engine.ema200.last().unwrap().unwrap() - whole.ema200.last().unwrap().unwrap()).abs() < 1e-6);
+            assert_eq!(c.engine.crosses, whole.crosses);
+        }
     }
 
     #[test]
