@@ -1180,7 +1180,7 @@ table.venues tr.off td { color: var(--dim); }
 .ref-row.lead { border-color: color-mix(in oklab, var(--primary) 40%, transparent); background: color-mix(in oklab, var(--primary) 6%, var(--surface-2)); }
 .ref-row.lead .who span { white-space: normal; line-height: 1.45; }
 .ref-row .new, .ref-card .new { padding: 1px 5px; border: 1px solid color-mix(in oklab, var(--primary) 50%, transparent); color: var(--primary); font-size: .5625rem; font-style: normal; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
-.ref-row .who span { color: var(--dim); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-row .who span { color: var(--muted); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-row .go { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); color: var(--primary); font-size: .6875rem; white-space: nowrap; transition: background 0.12s, color 0.12s; }
 .ref-row:hover .go { background: var(--primary); color: var(--bg); }
 /* At the foot, and meant to be seen: GitHub Sponsors' own pink. */
@@ -1189,10 +1189,11 @@ table.venues tr.off td { color: var(--dim); }
 .ref-sponsor .heart { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in oklab, #db61a2 18%, transparent); color: #db61a2; font-size: .9375rem; line-height: 1; }
 .ref-sponsor .who { flex: 1; display: grid; gap: 4px; min-width: 0; }
 .ref-sponsor .who b { font-size: .8125rem; font-weight: 600; }
-.ref-sponsor .who span { color: var(--dim); font-size: .6875rem; line-height: 1.45; }
+.ref-sponsor .who span { color: var(--muted); font-size: .6875rem; line-height: 1.45; }
 .ref-sponsor .go { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid color-mix(in oklab, #db61a2 55%, transparent); color: #db61a2; font-size: .6875rem; white-space: nowrap; transition: background 0.12s, color 0.12s; }
 .ref-sponsor:hover .go { background: #db61a2; color: #fff; }
-.ref-backers { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 14px 14px; color: var(--dim); font-size: .6875rem; }
+.ref footer span { color: var(--muted); }
+.ref-backers { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 14px 14px; color: var(--muted); font-size: .6875rem; }
 .ref-backers a { color: var(--text); text-decoration: none; }
 .ref-backers img { display: block; height: 18px; width: auto; }
 .ref-card { position: fixed; left: 12px; bottom: 34px; z-index: 79; width: min(330px, calc(100vw - 24px)); border: 1px solid var(--border); border-top: 2px solid var(--primary); background: var(--surface); box-shadow: 0 14px 44px #000d; font-size: .75rem; animation: toast-in 0.25s ease-out; }
@@ -1206,7 +1207,7 @@ table.venues tr.off td { color: var(--dim); }
 .ref-card .lead .xlogo { flex: none; }
 .ref-card .lead .who { flex: 1; display: grid; gap: 3px; min-width: 0; }
 .ref-card .lead .who b { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-.ref-card .lead .who span { color: var(--dim); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-card .lead .who span { color: var(--muted); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-card .lead > svg:last-child { flex: none; color: var(--dim); }
 .ref-card .pair { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 12px; }
 .ref-card .pair a { display: flex; align-items: center; justify-content: center; gap: 7px; height: 36px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; transition: border-color 0.12s, color 0.12s; }
