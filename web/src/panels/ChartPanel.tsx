@@ -5,7 +5,7 @@
  */
 import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from 'solid-js';
 import { lazy } from '../lib/lazy';
-import { armedTool, chartControllers, controllersChanged, covered, drawingsChanged, magnet, mobile, setArmedTool, setControllersChanged, setDrawingsChanged, setMobileMenu, setOverlay, setShownPattern, setShownTrades, setStudyEditing, sharedRail, shownPattern, shownTrades, smoothZoom, studyEditing, type ShownPattern, type ShownTrades } from '../app/ui';
+import { armedTool, chartControllers, layersOpen, setLayersOpen, controllersChanged, covered, drawingsChanged, magnet, mobile, setArmedTool, setControllersChanged, setDrawingsChanged, setMobileMenu, setOverlay, setShownPattern, setShownTrades, setStudyEditing, sharedRail, shownPattern, shownTrades, smoothZoom, studyEditing, type ShownPattern, type ShownTrades } from '../app/ui';
 import { Brand } from '../components/Brand';
 import { drawFavs, DrawingRail, favsOnChart, toolName, TOOLS } from './DrawingRail';
 import { call, debugClient, heardAt, holdChart, lastPrice, releaseChart, send } from '../engine/client';
@@ -50,6 +50,7 @@ const StudySettings = lazy(() => import('../components/StudySettings').then((m) 
 const AlertStyleSettings = lazy(() => import('../components/AlertStyleSettings').then((m) => ({ default: m.AlertStyleSettings })));
 const ChartMark = lazy(() => import('../components/ChartMark').then((m) => ({ default: m.ChartMark })));
 const DrawingToolbar = lazy(() => import('../components/DrawingToolbar').then((m) => ({ default: m.DrawingToolbar })));
+const LayersPanel = lazy(() => import('../components/LayersPanel').then((m) => ({ default: m.LayersPanel })));
 const DrawingSheet = lazy(() => import('../components/DrawingSheet').then((m) => ({ default: m.DrawingSheet })));
 const StrategyTester = lazy(() => import('../components/StrategyTester').then((m) => ({ default: m.StrategyTester })));
 
@@ -86,6 +87,8 @@ const TOOL_STEPS: Record<string, string> = {
   fibcircles: 'Fib circles: click the centre, then a point · right-click or esc cancels',
   gannbox: 'Gann box: click one corner, then the opposite one · right-click or esc cancels',
   gannfan: 'Gann fan: click the start, then the end of the 1×1 line · right-click or esc cancels',
+  avwap: 'Anchored VWAP: click the bar it starts from',
+  vprofile: 'Volume profile: click the first time, then the last · right-click or esc cancels',
   signpost: 'Signpost: click where it stands',
   comment: 'Comment: click where it points',
   pricerange: 'Price range: click from, then to · right-click or esc cancels',
@@ -806,6 +809,18 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       },
       drawingCount: () => drawings().length,
       clearDrawings: () => void clearDrawings(),
+      id,
+      drawings,
+      selectDrawing: setSelected,
+      restyleDrawing: (drawingId, patch) => {
+        const d = drawings().find((x) => x.id === drawingId);
+        if (d) void changeDrawing(drawingId, { style: { ...d.style, ...patch } });
+      },
+      cloneDrawing: (drawingId) => {
+        const d = drawings().find((x) => x.id === drawingId);
+        if (d) void saveDrawing({ kind: d.kind, points: d.points, label: d.label, style: d.style, timeframe: d.timeframe });
+      },
+      removeDrawing: (drawingId) => void deleteDrawing(drawingId),
     });
     setControllersChanged((n) => n + 1);
     onCleanup(() => {
@@ -917,7 +932,7 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       id: sid,
       list: [
         ...drawings()
-          .filter((d) => visibleOn(d.style, tf))
+          .filter((d) => visibleOn(d.style, tf) && !d.style.hidden)
           .map((d) => ({ id: d.id, kind: d.kind, points: d.points, label: d.label, style: d.style, timeframe: d.timeframe })),
         ...(p ? patternParts(p).map((d, i) => ({ id: -1_000_000 - i, ...d, style: { ...d.style, locked: true } })) : []),
         ...(traded()?.parts ?? []).map((d, i) => ({ id: -3_000_000 - i, ...d, style: { ...d.style, locked: true } })),
@@ -2379,6 +2394,9 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         }}
       </Show>
 
+      <Show when={layersOpen() === id}>
+        <LayersPanel target={() => (controllersChanged(), chartControllers.get(id))} onClose={() => setLayersOpen(null)} />
+      </Show>
       <Show when={drawSheet()}>
         <DrawingSheet target={() => (controllersChanged(), chartControllers.get(id))} onClose={() => setDrawSheet(false)} />
       </Show>

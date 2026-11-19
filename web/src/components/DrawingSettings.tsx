@@ -33,11 +33,11 @@ export interface DrawingPatch {
 
 type Tab = 'inputs' | 'style' | 'text' | 'coordinates' | 'visibility';
 
-const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve', 'fibtime', 'fibcircles', 'fibfan', 'gannfan']);
+const LINE_KINDS = new Set(['trendline', 'ray', 'horizontal', 'vertical', 'cross', 'path', 'brush', 'arc', 'curve', 'dcurve', 'fibtime', 'fibcircles', 'fibfan', 'gannfan', 'avwap']);
 /** Closed shapes: a border and a background, as a zone has. */
 /** Marks drawn in one colour. */
 const MARK_KINDS = new Set(['marker', 'markup', 'markdown', 'pricelabel', 'pricenote', 'pin', 'flag']);
-const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle', 'regression', 'flat', 'disjoint', 'pitchfork', 'schiff', 'mschiff', 'gannbox']);
+const SHAPE_KINDS = new Set(['rotrect', 'disk', 'ellipse', 'triangle', 'regression', 'flat', 'disjoint', 'pitchfork', 'schiff', 'mschiff', 'gannbox', 'vprofile']);
 
 export function DrawingSettings(props: {
   drawing: Drawing;

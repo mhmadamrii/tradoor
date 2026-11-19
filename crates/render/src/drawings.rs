@@ -88,10 +88,14 @@ pub enum DrawingKind {
     Signpost,
     /// A note in a bubble.
     Comment,
+    /// The volume-weighted average price from one bar on.
+    AnchoredVwap,
+    /// The volume traded at each price between two times.
+    VolumeProfile,
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 44] = [
+    pub const ALL: [DrawingKind; 46] = [
         Self::Path,
         Self::Brush,
         Self::Trendline,
@@ -136,6 +140,8 @@ impl DrawingKind {
         Self::GannFan,
         Self::Signpost,
         Self::Comment,
+        Self::AnchoredVwap,
+        Self::VolumeProfile,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -184,6 +190,8 @@ impl DrawingKind {
             Self::GannFan => "gannfan",
             Self::Signpost => "signpost",
             Self::Comment => "comment",
+            Self::AnchoredVwap => "avwap",
+            Self::VolumeProfile => "vprofile",
         }
     }
 
@@ -194,7 +202,7 @@ impl DrawingKind {
     /// Anchors the kind takes — the minimum for a path or brush.
     pub fn arity(self) -> usize {
         match self {
-            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin | Self::Signpost | Self::Comment => 1,
+            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin | Self::Signpost | Self::Comment | Self::AnchoredVwap => 1,
             Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff | Self::FibExt => 3,
             Self::DCurve => 4,
             _ => 2,
@@ -482,6 +490,9 @@ pub struct Placed<'a> {
     pub plot: Rect,
     /// A regression's fitted line and its bands, on screen: centre, upper and lower, each from its first time to its second.
     pub fit: Option<[(f32, f32); 6]>,
+    /// What a drawing reads off the bars: an anchored VWAP's line, or a volume
+    /// profile's rows as (top, bottom, length) with the point of control first.
+    pub series: Vec<(f32, f32, f32)>,
 }
 
 impl Placed<'_> {
@@ -1024,6 +1035,31 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 }
             }
         }
+        (DrawingKind::AnchoredVwap, _, _) => {
+            let line: Vec<(f32, f32)> = d.series.iter().map(|p| (p.0, p.1)).collect();
+            frame.polyline(&line, width, color);
+            if let Some(end) = line.last() {
+                frame.text(end.0 + 4.0, end.1, "VWAP", text_color, Align::Left, Baseline::Middle, font, None, Some(plot));
+            }
+            // The anchor on the line itself: the VWAP of its own bar.
+            let at = line.first().copied().unwrap_or(a);
+            frame.circle(at.0, at.1, 3.0, color);
+        }
+        (DrawingKind::VolumeProfile, Some(b), _) => {
+            let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+            for (i, &(top, bottom, len)) in d.series.iter().enumerate() {
+                let poc = i == 0;
+                frame.rect(x0, top, len, (bottom - top - 1.0).max(1.0), if poc { color.with_alpha(200) } else { fill.unwrap_or(color.with_alpha(70)) });
+                if poc {
+                    stroke(frame, (x0, (top + bottom) / 2.0), (x1, (top + bottom) / 2.0), 1.0, color, Dash::Dashed);
+                }
+            }
+            if let (Some(t), Some(btm)) = (d.series.iter().map(|r| r.0).reduce(f32::min), d.series.iter().map(|r| r.1).reduce(f32::max)) {
+                for (p, q) in [((x0, t), (x1, t)), ((x1, t), (x1, btm)), ((x1, btm), (x0, btm)), ((x0, btm), (x0, t))] {
+                    stroke(frame, p, q, 1.0, color.with_alpha(120), Dash::Dotted);
+                }
+            }
+        }
         (DrawingKind::FibCircles, Some(b), _) => {
             let r = (b.0 - a.0).hypot(b.1 - a.1);
             stroke(frame, a, b, 1.0, color.with_alpha(110), Dash::Dashed);
@@ -1366,6 +1402,15 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             }
             None => f32::INFINITY,
         },
+        DrawingKind::AnchoredVwap => d.series.windows(2).map(|w| distance_to_segment(cursor, (w[0].0, w[0].1), (w[1].0, w[1].1))).fold(((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - 4.0).max(0.0), f32::min),
+        DrawingKind::VolumeProfile if d.points.len() >= 2 => {
+            let (x0, x1) = (d.points[0].0.min(d.points[1].0), d.points[0].0.max(d.points[1].0));
+            match (d.series.iter().map(|r| r.0).reduce(f32::min), d.series.iter().map(|r| r.1).reduce(f32::max)) {
+                (Some(t), Some(b)) if cursor.0 >= x0 && cursor.0 <= x1 && cursor.1 >= t && cursor.1 <= b => 0.0,
+                (Some(t), Some(b)) => distance_to_segment(cursor, (x0, t), (x0, b)).min(distance_to_segment(cursor, (x1, t), (x1, b))),
+                _ => f32::INFINITY,
+            }
+        }
         DrawingKind::FibCircles if d.points.len() >= 2 => {
             let (a, b) = (d.points[0], d.points[1]);
             let (r, at) = ((b.0 - a.0).hypot(b.1 - a.1), (cursor.0 - a.0).hypot(cursor.1 - a.1));

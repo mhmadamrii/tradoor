@@ -52,6 +52,10 @@ export function factoryStyle(kind: string): Style {
     case 'fibfan':
     case 'gannfan':
       return { color: '#2962ff', width: 1 };
+    case 'avwap':
+      return { color: '#ff9800', width: 1.5 };
+    case 'vprofile':
+      return { color: '#2962ff', width: 1, fillOn: true, fill: '#2962ff55' };
     case 'gannbox':
       return { color: '#2962ff', width: 1, fillOn: true, fill: '#2962ff14' };
     case 'signpost':

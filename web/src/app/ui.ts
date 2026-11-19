@@ -42,7 +42,18 @@ export interface ChartController {
   deleteSelected(): void;
   drawingCount(): number;
   clearDrawings(): void;
+  /** The chart's id, and its drawings for the layers panel: each one shown,
+   *  restyled (hidden, grouped), copied or deleted from there. */
+  id: string;
+  drawings(): { id: number; kind: string; label: string | null; style: Record<string, string | number | boolean>; createdAt: number }[];
+  selectDrawing(id: number | null): void;
+  restyleDrawing(id: number, patch: Record<string, string | number | boolean>): void;
+  cloneDrawing(id: number): void;
+  removeDrawing(id: number): void;
 }
+
+/** The chart whose layers panel is open, by id. */
+export const [layersOpen, setLayersOpen] = createSignal<string | null>(null);
 
 export const chartControllers = new Map<string, ChartController>();
 /**

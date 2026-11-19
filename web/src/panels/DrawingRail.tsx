@@ -8,7 +8,7 @@
  */
 import { createSignal, For, Show } from 'solid-js';
 import { useDismiss } from '../lib/dismiss';
-import { armedTool, cycleMagnet, magnet, setArmedTool, TOOL_KEYS, type ChartController, type MagnetMode } from '../app/ui';
+import { armedTool, cycleMagnet, layersOpen, magnet, setArmedTool, setLayersOpen, TOOL_KEYS, type ChartController, type MagnetMode } from '../app/ui';
 import { Icon, type IconName } from '../lib/icons';
 import { tl, tlf } from '../lib/i18n';
 import { readJson, readPref, writePref } from '../lib/prefs';
@@ -64,6 +64,8 @@ export const TOOLS: { kind: string; icon: IconName; title: string }[] = [
   { kind: 'pricenote', icon: 'pricenote', title: 'Price note — click the price, then where its tag goes' },
   { kind: 'pricelabel', icon: 'pricelabel', title: 'Price label — one click; a tag reading the price there' },
   { kind: 'pin', icon: 'pin', title: 'Pin — one click' },
+  { kind: 'avwap', icon: 'avwap', title: 'Anchored VWAP — click the bar it starts from' },
+  { kind: 'vprofile', icon: 'vprofile', title: 'Fixed range volume profile — click the first time, then the last; the volume at each price between' },
   { kind: 'signpost', icon: 'signpost', title: 'Signpost — click where it stands, then type its note' },
   { kind: 'comment', icon: 'comment', title: 'Comment — click where it points, then type it' },
   { kind: 'flag', icon: 'flag', title: 'Flag — one click' },
@@ -86,6 +88,7 @@ export const GROUPS: { name: string; kinds: string[] }[] = [
   { name: 'Arrows', kinds: ['arrow', 'marker', 'markup', 'markdown'] },
   { name: 'Shapes', kinds: ['rect', 'rotrect', 'path', 'disk', 'ellipse', 'triangle', 'arc', 'curve', 'dcurve'] },
   { name: 'Text and notes', kinds: ['text', 'callout', 'comment', 'pricenote', 'pricelabel', 'signpost', 'pin', 'flag'] },
+  { name: 'Volume', kinds: ['avwap', 'vprofile'] },
   { name: 'Forecasting and measure', kinds: ['long', 'short', 'measure', 'pricerange', 'daterange'] },
 ];
 
@@ -145,6 +148,14 @@ export function DrawingRail(props: { target: () => ChartController | undefined }
       </button>
       <For each={GROUPS}>{(g) => <RailGroup rail={rail} group={g} offline={offline} />}</For>
       <hr />
+      <button
+        classList={{ on: !!layersOpen() && layersOpen() === props.target()?.id }}
+        aria-label="Object tree"
+        data-tip="Object tree — every drawing on this market: hide, clone, delete, group"
+        onClick={() => setLayersOpen(layersOpen() === props.target()?.id ? null : (props.target()?.id ?? null))}
+      >
+        <Icon name="layers" />
+      </button>
       <button
         class="favs"
         classList={{ on: favsOnChart() }}

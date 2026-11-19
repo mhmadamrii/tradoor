@@ -3145,7 +3145,65 @@ impl Chart {
         // A lower pane's values read to two places, as its axis has them.
         let precision = if index == 0 { self.precision() } else { 2 };
         let fit = if shape.kind == DrawingKind::Regression && shape.points.len() >= 2 { self.regression(shape, &pane.scale) } else { None };
-        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit })
+        let series = match shape.kind {
+            DrawingKind::AnchoredVwap => self.anchored_vwap(shape, &pane.scale),
+            DrawingKind::VolumeProfile if shape.points.len() >= 2 => self.volume_profile(shape, &pane.scale, &points),
+            _ => Vec::new(),
+        };
+        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit, series })
+    }
+
+    /// The VWAP from the anchor's bar to the newest, a point a bar, drawn only
+    /// where the chart shows it: the sums still start at the anchor.
+    fn anchored_vwap(&self, shape: &DrawingShape, scale: &PriceScale) -> Vec<(f32, f32, f32)> {
+        let Some(n) = self.total_bars().checked_sub(1) else { return Vec::new() };
+        let Some(at) = self.drawing_logical(shape, shape.points[0].time) else { return Vec::new() };
+        let first = at.round().max(0.0) as usize;
+        let (from, to) = (self.time.logical(0.0).floor().max(0.0) as usize, (self.time.logical(f64::from(self.width)).ceil().max(0.0) as usize).min(n));
+        let (mut pv, mut v) = (0.0, 0.0);
+        let mut out = Vec::new();
+        for i in first..=to {
+            let Some(b) = self.bar(i) else { break };
+            pv += (b.high + b.low + b.close) / 3.0 * b.volume;
+            v += b.volume;
+            if i + 1 >= from && v > 0.0 {
+                out.push((self.time.x(i as f64) as f32, scale.y(pv / v) as f32, 0.0));
+            }
+        }
+        out
+    }
+
+    /// The volume traded between a profile's two times in rows of price, each
+    /// bar's spread evenly over its range; the busiest row first.
+    fn volume_profile(&self, shape: &DrawingShape, scale: &PriceScale, at: &[(f32, f32)]) -> Vec<(f32, f32, f32)> {
+        const ROWS: usize = 24;
+        let (Some(la), Some(lb)) = (self.drawing_logical(shape, shape.points[0].time), self.drawing_logical(shape, shape.points[1].time)) else { return Vec::new() };
+        let last = self.total_bars().saturating_sub(1) as f64;
+        let (i0, i1) = (la.min(lb).ceil().max(0.0) as usize, la.max(lb).floor().min(last) as usize);
+        let bars: Vec<_> = (i0..=i1).filter_map(|i| self.bar(i)).collect();
+        let (Some(lo), Some(hi)) = (bars.iter().map(|b| b.low).reduce(f64::min), bars.iter().map(|b| b.high).reduce(f64::max)) else { return Vec::new() };
+        if hi <= lo {
+            return Vec::new();
+        }
+        let step = (hi - lo) / ROWS as f64;
+        let mut vol = [0.0f64; ROWS];
+        for b in &bars {
+            let span = (b.high - b.low).max(step * 1e-6);
+            for (r, cell) in vol.iter_mut().enumerate() {
+                let (bot, top) = (lo + step * r as f64, lo + step * (r + 1) as f64);
+                let overlap = (b.high.min(top) - b.low.max(bot)).max(0.0);
+                *cell += b.volume * if b.high > b.low { overlap / span } else if b.low >= bot && b.low < top { 1.0 } else { 0.0 };
+            }
+        }
+        let most = vol.iter().copied().fold(0.0, f64::max);
+        if most <= 0.0 {
+            return Vec::new();
+        }
+        let reach = (at[0].0 - at[1].0).abs() * 0.7;
+        let mut rows: Vec<(f32, f32, f32)> = (0..ROWS).map(|r| (scale.y(lo + step * (r + 1) as f64) as f32, scale.y(lo + step * r as f64) as f32, (vol[r] / most) as f32 * reach)).collect();
+        let poc = (0..ROWS).fold(0, |m, r| if vol[r] > vol[m] { r } else { m });
+        rows.swap(0, poc);
+        rows
     }
 
     /// The closes between a regression's two times fitted to a line, and the
@@ -5562,6 +5620,20 @@ mod tests {
         // Zones at 0, 1, 2, 3, 5, 8 spans: 100, 120, 140, 160, 200, 260.
         assert_eq!(c.drawing_at(260.0, 450.0), Some(5));
         assert_eq!(c.drawing_at(230.0, 450.0), None, "between the 5th and the 8th");
+    }
+
+    #[test]
+    fn an_anchored_vwap_runs_from_its_bar_and_a_profile_puts_its_busiest_row_first() {
+        let mut c = chart();
+        let anchor = c.anchor_at(200.0, 300.0).unwrap();
+        let (a, b) = (c.anchor_at(150.0, 300.0).unwrap(), c.anchor_at(450.0, 300.0).unwrap());
+        c.set_drawings(vec![DrawingShape::new(Some(1), DrawingKind::AnchoredVwap, vec![anchor]), DrawingShape::new(Some(2), DrawingKind::VolumeProfile, vec![a, b])]);
+        let vwap = c.place(&c.drawings[0], false).unwrap();
+        assert!(vwap.series.len() > 2 && (vwap.series[0].0 - 200.0).abs() < c.time.bar_spacing as f32, "from its bar: {:?}", vwap.series.first());
+        let profile = c.place(&c.drawings[1], false).unwrap();
+        assert_eq!(profile.series.len(), 24);
+        assert!(profile.series.iter().all(|r| r.2 <= profile.series[0].2 + 0.01), "the point of control is the longest row");
+        assert!((profile.series[0].2 - 300.0 * 0.7).abs() < 0.5);
     }
 
     #[test]
