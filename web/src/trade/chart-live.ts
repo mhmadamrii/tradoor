@@ -19,7 +19,7 @@
  * testnet's prices, and say "testnet". Built here, loaded with the order
  * system; the chart only takes the shapes (app/ui `liveShapes`).
  */
-import { createEffect, createRoot, createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal, untrack } from 'solid-js';
 import { setLiveShapes, type ShownTrades } from '../app/ui';
 import { catalog } from '../lib/api';
 import { liqOf, placeOf, trade } from './client';
@@ -45,7 +45,8 @@ const [drafts, setDrafts] = createSignal<Record<string, Draft>>({});
 
 /** A form's preview, by the form's own key; null takes it away. */
 export function setDraft(key: string, d: Draft | null): void {
-  const all = { ...drafts() };
+  // Untracked: a form's effect calls this, and must not run again on its own write.
+  const all = { ...untrack(drafts) };
   if (d && d.lines.length) all[key] = d;
   else if (key in all) delete all[key];
   else return;
