@@ -3,6 +3,7 @@
 
 use tradoor_core::num::Within;
 use tradoor_core::chart::{engine_series_with, EngineSeries};
+use tradoor_core::indicators::Series;
 use tradoor_core::format::{format_compact, format_countdown, format_price, format_turnover, price_precision};
 use tradoor_core::live::LiveBar;
 use tradoor_core::indicators::profile::value_area;
@@ -39,6 +40,45 @@ const SHORT_BAR_MS: i64 = 15 * 60_000;
 const RIGHT_MARGIN_BARS: f64 = 2.0;
 /// The tradoor mark's size, in CSS pixels.
 const MARK: f32 = 34.0;
+
+/// Whether a study's figures move with the forming bar. VWAP levels read their
+/// own hourly and daily bars; volume delta waits for a bar's buyers, which only
+/// a closed one reports.
+fn reads_bars(kind: StudyKind) -> bool {
+    !matches!(kind, StudyKind::VwapLevels | StudyKind::VolumeDelta | StudyKind::VisibleProfile | StudyKind::Flow | StudyKind::Formula)
+}
+
+/// The bars a study is worked out over: the closed ones and the forming one,
+/// but closed alone for volume delta, and for open interest, which folds the
+/// forming bar in itself.
+fn study_bars<'a>(kind: StudyKind, closed: &'a [Candle], bars: &'a [Candle]) -> &'a [Candle] {
+    if matches!(kind, StudyKind::OpenInterest | StudyKind::VolumeDelta) { closed } else { bars }
+}
+
+/// How often, at most, a tick within the forming bar moves the indicators:
+/// with months of minutes held, the ribbon alone takes milliseconds.
+const SETTLE_MS: i64 = 100;
+
+/// The bars a study is first worked out over on a tick, doubled until they
+/// agree with the whole; from half of all the bars on, it is the whole.
+const TAIL: usize = 512;
+
+/// `part`, a series worked out over the bars from `from` on, over `whole` from
+/// its middle on — where it agrees with `whole` there, so that the bars before
+/// were enough to settle it. Averages that carry all of history converge on the
+/// whole's figures; one anchored further back than the part reaches does not.
+fn splice(whole: &mut Series, part: &Series, from: usize) -> bool {
+    let mid = part.len() / 2;
+    let near = |(a, b): (&Option<f64>, &Option<f64>)| match (a, b) {
+        (Some(a), Some(b)) => (a - b).abs() <= 1e-9 * a.abs().max(b.abs()),
+        (a, b) => a == b,
+    };
+    if whole.len() != from + part.len() || !whole[from + mid..].iter().zip(&part[mid..]).take(8).all(near) {
+        return false;
+    }
+    whole[from + mid..].copy_from_slice(&part[mid..]);
+    true
+}
 
 /// Where the mark stands: bottom left of the price pane, where it has room —
 /// above `bottom`, the footprint's stats table where it is shown, whose names it covered.
@@ -187,6 +227,8 @@ pub struct Legend {
     pub bar_x: Option<f32>,
     /// The alert line under the pointer, and its y.
     pub alert: Option<(i64, f32)>,
+    /// A line the page drew that a drag acts on (an order system's), under the pointer, and its y.
+    pub live: Option<(i64, f32)>,
     /// The flow mark under the pointer: which one, and where it sits.
     pub flow: Option<(usize, f32, f32)>,
     /// The footprint cell under the pointer, as the screen groups it, for the
@@ -492,6 +534,19 @@ pub struct Chart {
     level_bars: [Vec<Candle>; 2],
     times: Vec<f64>,
     live: Option<LiveBar>,
+    /// The closed bars and the forming one after them: what the indicators read,
+    /// so their lines run to the last candle drawn and move with it.
+    bars: Vec<Candle>,
+    /// The forming bar moved since the indicators last read it. They are worked
+    /// out again as it is drawn, not once a trade, and within one bar at most
+    /// every `SETTLE_MS`.
+    live_stale: bool,
+    settled_at: i64,
+    /// The forming bar the studies were last worked out with, by open time.
+    studied_live: Option<i64>,
+    /// How many of the last bars each study is worked out over on a tick
+    /// within the forming bar; see `TAIL`.
+    tails: Vec<usize>,
     liquidations: Vec<Liquidation>,
     /// Added to a time before it is written on the axis: the reader's time zone.
     utc_offset: i64,
@@ -606,6 +661,11 @@ impl Chart {
             candles: Vec::new(),
             times: Vec::new(),
             live: None,
+            bars: Vec::new(),
+            live_stale: false,
+            settled_at: 0,
+            studied_live: None,
+            tails: Vec::new(),
             liquidations: Vec::new(),
             utc_offset: 0,
             tpo: None,
@@ -742,6 +802,8 @@ impl Chart {
             self.timeframe = timeframe;
             self.view_ready = false;
             self.live = None;
+            self.sync_bars();
+            self.live_stale = true;
             self.placed.clear();
             self.draft = None;
             // The old bars' footprint would stand between the new candles until
@@ -766,8 +828,12 @@ impl Chart {
             self.history_asked = None;
         }
         self.precision = price_precision(self.candles.iter().rev().take(2000).flat_map(|c| [c.open, c.high, c.low, c.close]));
+        self.bars.clone_from(&self.candles);
+        self.sync_bars();
         self.refresh_engine();
         self.studies = self.compute_studies(&self.study_specs);
+        self.studied_live = self.live.map(|l| l.open_time);
+        self.live_stale = false;
         if self.candles.is_empty() {
             self.view_ready = false;
             // Another market on its way: the last one's footprint is not its.
@@ -780,7 +846,7 @@ impl Chart {
     }
 
     fn refresh_engine(&mut self) {
-        self.engine = engine_series_with(&self.candles, self.styles.lengths());
+        self.engine = engine_series_with(&self.bars, self.styles.lengths());
         self.ribbon = ribbon_runs(&self.engine.ema12, &self.engine.ema25);
     }
 
@@ -824,43 +890,90 @@ impl Chart {
         &self.candles
     }
 
-    /// The forming bar, drawn after the closed ones. Indicators stop at the last
-    /// CLOSED bar: the forming one can still change.
+    /// The forming bar, drawn after the closed ones. The indicators read it too,
+    /// as the bar it is so far: their last values move with it until it closes.
     pub fn set_live(&mut self, live: Option<LiveBar>) {
         let live = live.filter(|l| self.candles.last().is_none_or(|c| l.open_time > c.open_time));
         if live != self.live {
-            let same_bar = live.zip(self.live).is_some_and(|(a, b)| a.open_time == b.open_time);
             // A trade at a price the bar has already seen moves its volume alone:
-            // with no volume drawn, nothing on screen changes and nothing is redrawn.
-            let unseen = same_bar
-                && live.zip(self.live).is_some_and(|(a, b)| (a.open, a.high, a.low, a.close) == (b.open, b.high, b.low, b.close))
+            // with no volume drawn and no study to read it, nothing on screen
+            // changes and nothing is redrawn.
+            let unseen = live.zip(self.live).is_some_and(|(a, b)| a.open_time == b.open_time && (a.open, a.high, a.low, a.close) == (b.open, b.high, b.low, b.close))
                 && self.hidden.contains("volume")
                 && self.tpo().is_none()
-                && !self.footprint_shown;
+                && !self.footprint_shown
+                && self.studies.iter().all(|s| self.hidden.contains(&s.id));
             self.live = live;
+            self.sync_bars();
             if unseen {
                 return;
             }
-            // Open interest runs into the forming bar, and in dollars moves with
-            // its price: a tick within the bar moves that bar's figure alone.
-            if same_bar {
-                self.refresh_open_interest_live();
-            } else {
-                self.refresh_open_interest();
-            }
+            self.live_stale = true;
             self.touch();
+        }
+    }
+
+    /// The forming bar as a candle after the closed ones, or none.
+    fn sync_bars(&mut self) {
+        self.bars.truncate(self.candles.len());
+        if let Some(l) = self.live {
+            self.bars.push(Candle { open_time: l.open_time, open: l.open, high: l.high, low: l.low, close: l.close, volume: l.volume, quote_volume: None, taker_buy: None });
+        }
+    }
+
+    /// The indicators worked out again with the forming bar as it now stands.
+    /// A bar just opened has them all worked out whole. A tick within it moves
+    /// the last figures alone: the closed bars stand, and working months of
+    /// minutes out again on every trade was more than a frame has. So each is
+    /// worked out over the last bars only, as few as agree with the whole.
+    fn settle_live(&mut self, now: i64) {
+        let same_bar = self.live.is_some() && self.live.map(|l| l.open_time) == self.studied_live;
+        if !self.live_stale || same_bar && now - self.settled_at < SETTLE_MS {
+            return;
+        }
+        self.live_stale = false;
+        self.settled_at = now;
+        self.studied_live = self.live.map(|l| l.open_time);
+        let n = self.bars.len();
+        // From bar 0 is the whole.
+        let from = |tail: usize| if tail * 2 < n { n - tail } else { 0 };
+        // The ribbon and the long average are worked out whole: three averages
+        // over the bars held are cheap, and nothing while neither is drawn.
+        if !(same_bar && self.hidden.contains("ribbon") && self.hidden.contains("ema200")) {
+            self.refresh_engine();
+        }
+        self.tails.resize(self.studies.len(), TAIL);
+        let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
+        for ((spec, study), kept) in self.study_specs.iter().zip(self.studies.iter_mut()).zip(self.tails.iter_mut()) {
+            let oi = spec.kind == StudyKind::OpenInterest;
+            // Sessions, levels and swings stand as the bar opened.
+            let drawn = !(study.boxes.is_empty() && study.segments.is_empty() && study.markers.is_empty());
+            if self.hidden.contains(&study.id) || !reads_bars(spec.kind) || same_bar && (drawn || oi && open_interest_live(spec, study, &self.candles, &inputs)) {
+                continue;
+            }
+            let mut tail = if same_bar && !oi { *kept } else { n };
+            loop {
+                let at = from(tail);
+                let part = compute_study_with(spec, if at == 0 { study_bars(spec.kind, &self.candles, &self.bars) } else { &self.bars[at..] }, &inputs);
+                if at == 0 {
+                    *study = part;
+                } else if !(part.lines.len() == study.lines.len() && study.lines.iter_mut().zip(&part.lines).all(|(w, p)| splice(&mut w.values, &p.values, at))) {
+                    tail *= 2;
+                    continue;
+                }
+                break;
+            }
+            if same_bar && !oi {
+                *kept = tail;
+            }
         }
     }
 
     /// Summed open interest, `(time, [open, high, low, close])` steps oldest first.
     pub fn set_open_interest(&mut self, steps: Vec<(i64, [f64; 4])>) {
         self.open_interest = steps;
-        self.refresh_open_interest();
-        self.touch();
-    }
-
-    fn refresh_open_interest(&mut self) {
         self.refresh_studies(StudyKind::OpenInterest);
+        self.touch();
     }
 
     /// Recompute the shown studies of one kind, after what they read changed.
@@ -871,19 +984,7 @@ impl Chart {
         let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
         for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
             if spec.kind == kind && !self.hidden.contains(&study.id) {
-                *study = compute_study_with(spec, &self.candles, &inputs);
-            }
-        }
-    }
-
-    /// The shown open interest's forming bar, after a tick within it: the bars
-    /// before it stand, and working them all out again on every trade of a busy
-    /// market with months of minutes loaded was most of what the chart did.
-    fn refresh_open_interest_live(&mut self) {
-        let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
-        for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
-            if spec.kind == StudyKind::OpenInterest && !self.hidden.contains(&study.id) && !open_interest_live(spec, study, &self.candles, &inputs) {
-                *study = compute_study_with(spec, &self.candles, &inputs);
+                *study = compute_study_with(spec, study_bars(kind, &self.candles, &self.bars), &inputs);
             }
         }
     }
@@ -895,7 +996,7 @@ impl Chart {
     /// Every study worked out but the hidden ones, which wait until shown.
     fn compute_studies(&self, specs: &[StudySpec]) -> Vec<ComputedStudy> {
         let inputs = self.study_inputs();
-        specs.iter().map(|s| if self.hidden.contains(&s.id()) { idle_study(s) } else { compute_study_with(s, &self.candles, &inputs) }).collect()
+        specs.iter().map(|s| if self.hidden.contains(&s.id()) { idle_study(s) } else { compute_study_with(s, study_bars(s.kind, &self.candles, &self.bars), &inputs) }).collect()
     }
 
     /// One liquidation, to ping beside the candles until it fades.
@@ -921,11 +1022,12 @@ impl Chart {
 
     /// A script's lines, fills, marks, shapes and table, as the formula module gave them
     /// (crates/frost-script-wasm): a part a line, tab-separated, whole numbers only, and the
-    /// values each part has after it, in the same order. Values for other bars than
-    /// these — the window moved since — are let go.
-    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64]) {
+    /// values each part has after it, in the same order. With `live`, worked out
+    /// over the forming bar too, one value more a series. Values for other bars
+    /// than these — the window moved since — are let go.
+    pub fn set_formula(&mut self, id: &str, label: &str, meta: &str, values: &[f64], live: bool) {
         use tradoor_core::studies::{ArtBox, ArtCell, ArtLabel, ArtLine, FormulaArt, StudyLine, StudyMarker, FORMULA_FILLS, FORMULA_LINES, FORMULA_MARKS};
-        let n = self.candles.len();
+        let n = self.candles.len() + usize::from(live);
         let place = self.formulas.iter().position(|s| s.id == id).unwrap_or(self.formulas.len());
         let mut study = ComputedStudy {
             id: id.to_string(),
@@ -1021,8 +1123,10 @@ impl Chart {
                     let plot = FORMULA_MARKS[study.markers.len().min(FORMULA_MARKS.len() - 1)];
                     let tone = Tone::Rgba(int(color));
                     for (i, hit) in hits.iter().enumerate() {
+                        // The forming bar's too, past the closed ones, now that formulas run over it.
+                        let Some(time) = self.bar(i).map(|b| b.time) else { continue };
                         if *hit != 0.0 {
-                            study.markers.push(StudyMarker { time: self.candles[i].open_time, above: *above == "1", text: (*text).to_string(), tone, plot, hollow: false });
+                            study.markers.push(StudyMarker { time, above: *above == "1", text: (*text).to_string(), tone, plot, hollow: false });
                         }
                     }
                 }
@@ -1078,6 +1182,8 @@ impl Chart {
         if specs != self.study_specs {
             self.studies = self.compute_studies(&specs);
             self.study_specs = specs;
+            self.tails.clear();
+            self.studied_live = self.live.map(|l| l.open_time);
             self.touch();
         }
     }
@@ -1089,7 +1195,7 @@ impl Chart {
         let inputs = StudyInputs { open_interest: &self.open_interest, live: self.live.map(|l| (l.open_time, l.close)), days: &self.days, hourly: &self.level_bars[0], daily: &self.level_bars[1] };
         for (spec, study) in self.study_specs.iter().zip(self.studies.iter_mut()) {
             match (was.contains(&study.id), self.hidden.contains(&study.id)) {
-                (true, false) => *study = compute_study_with(spec, &self.candles, &inputs),
+                (true, false) => *study = compute_study_with(spec, study_bars(spec.kind, &self.candles, &self.bars), &inputs),
                 (false, true) => *study = idle_study(spec),
                 _ => {}
             }
@@ -1373,6 +1479,18 @@ impl Chart {
     }
 
     /// The alert the pointer is on, by its line or by its badge, and its y.
+    /// The price at a height in the main pane, NaN when there is no pane.
+    pub fn price_at_y(&self, y: f32) -> f64 {
+        self.panes.first().map_or(f64::NAN, |p| p.scale.price(f64::from(y)))
+    }
+
+    /// The page's own line under the pointer (a negative id, not locked), and where it is drawn.
+    fn live_at(&self, x: f32, y: f32) -> Option<(i64, f32)> {
+        let id = self.drawing_at(x, y).filter(|id| *id < 0)?;
+        let shape = self.drawings.iter().find(|d| d.id == Some(id))?;
+        Some((id, self.place(shape, false)?.points.first()?.1))
+    }
+
     pub fn alert_handle_at(&self, x: f32, y: f32) -> Option<(i64, f32)> {
         self.alert_at(x, y).or_else(|| {
             let id = self.alert_badge_at(x, y)?;
@@ -1630,7 +1748,7 @@ impl Chart {
 
     /// Something changed, or the countdown needs its next second.
     pub fn needs_render(&self, now: i64) -> bool {
-        self.dirty || (!self.candles.is_empty() && now.div_euclid(1000) != self.last_second)
+        self.dirty || (!self.candles.is_empty() && now.div_euclid(1000) != self.last_second) || self.live_stale && now - self.settled_at >= SETTLE_MS
     }
 
     /// A liquidation ping is sliding in or fading, or has just gone: the feed's
@@ -1895,6 +2013,7 @@ impl Chart {
 
     pub fn render(&mut self, now: i64) -> &Frame {
         self.dirty = false;
+        self.settle_live(now);
         self.last_second = now.div_euclid(1000);
         let mut frame = std::mem::take(&mut self.frame);
         frame.begin(self.width, self.height, self.dpr, self.theme.background);
@@ -2483,7 +2602,8 @@ impl Chart {
         if !tpo && !self.hidden.contains("ribbon") && !self.styles.of("ribbon", "marks").off {
             let (rising, falling) = (self.styles.color("ribbon", "bull", t.ribbon_fast).with_alpha(255), self.styles.color("ribbon", "bear", t.ribbon_slow).with_alpha(255));
             for cross in self.engine.crosses.iter().filter(|c| c.index >= i0 && c.index <= i1) {
-                let c = &self.candles[cross.index];
+                // A cross on the forming bar is past the closed candles: its bar is the live one.
+                let Some(c) = self.bar(cross.index) else { continue };
                 let x = self.time.x(cross.index as f64) as f32;
                 if cross.bull {
                     let tip = price.scale.y(c.low) as f32 + 6.0;
@@ -3042,8 +3162,96 @@ impl Chart {
         let last = self.candles.last().map(|c| c.close);
         // A lower pane's values read to two places, as its axis has them.
         let precision = if index == 0 { self.precision() } else { 2 };
+        // A fill's arrow at its bar: a little under the low, or over the high, whatever its price.
+        if shape.style.at_bar && matches!(shape.kind, DrawingKind::MarkUp | DrawingKind::MarkDown) {
+            let bar = shape.points.first().and_then(|a| self.drawing_logical(shape, a.time)).and_then(|l| self.bar(l.round().max(0.0) as usize));
+            if let (Some(b), Some(p)) = (bar, points.first_mut()) {
+                p.1 = if shape.kind == DrawingKind::MarkUp { pane.scale.y(b.low) as f32 + 4.0 } else { pane.scale.y(b.high) as f32 - 4.0 };
+            }
+        }
         let fit = if shape.kind == DrawingKind::Regression && shape.points.len() >= 2 { self.regression(shape, &pane.scale) } else { None };
-        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit })
+        let series = match shape.kind {
+            DrawingKind::AnchoredVwap => self.anchored_vwap(shape, &pane.scale),
+            DrawingKind::VolumeProfile if shape.points.len() >= 2 => self.volume_profile(shape, &pane.scale, &points),
+            DrawingKind::BarsPattern if shape.points.len() >= 3 => self.bars_pattern(shape, &pane.scale),
+            _ => Vec::new(),
+        };
+        let bar_px = self.time.bar_spacing as f32;
+        Some(Placed { shape, points, selected: !draft && shape.id.is_some() && shape.id == self.selected, draft, hovered: false, bars, scale: pane.scale, precision, last, plot: pane.plot, fit, series, bar_px })
+    }
+
+    /// A bars pattern's copy: each bar between its first two times, moved on as
+    /// many bars as the third point is from the first and shifted so the first
+    /// bar opens at the third point's price; a ratio under a log scale.
+    fn bars_pattern(&self, shape: &DrawingShape, scale: &PriceScale) -> Vec<(f32, f32, f32)> {
+        const MOST: usize = 500;
+        let (Some(la), Some(lb), Some(lc)) = (self.drawing_logical(shape, shape.points[0].time), self.drawing_logical(shape, shape.points[1].time), self.drawing_logical(shape, shape.points[2].time)) else { return Vec::new() };
+        let last = self.total_bars().saturating_sub(1) as f64;
+        let (i0, i1) = (la.min(lb).round().max(0.0) as usize, la.max(lb).round().min(last) as usize);
+        let Some(first) = self.bar(i0) else { return Vec::new() };
+        let shift = scale.transform(shape.points[2].price) - scale.transform(first.open);
+        let at = |p: f64| scale.y(scale.untransform(scale.transform(p) + shift)) as f32;
+        let mut out = Vec::new();
+        for (k, i) in (i0..=i1).take(MOST).enumerate() {
+            let Some(b) = self.bar(i) else { break };
+            let x = self.time.x(lc.round() + k as f64) as f32;
+            out.push((x, at(b.high), at(b.low)));
+            out.push((x, at(b.open), at(b.close)));
+        }
+        out
+    }
+
+    /// The VWAP from the anchor's bar to the newest, a point a bar, drawn only
+    /// where the chart shows it: the sums still start at the anchor.
+    fn anchored_vwap(&self, shape: &DrawingShape, scale: &PriceScale) -> Vec<(f32, f32, f32)> {
+        let Some(n) = self.total_bars().checked_sub(1) else { return Vec::new() };
+        let Some(at) = self.drawing_logical(shape, shape.points[0].time) else { return Vec::new() };
+        let first = at.round().max(0.0) as usize;
+        let (from, to) = (self.time.logical(0.0).floor().max(0.0) as usize, (self.time.logical(f64::from(self.width)).ceil().max(0.0) as usize).min(n));
+        let (mut pv, mut v) = (0.0, 0.0);
+        let mut out = Vec::new();
+        for i in first..=to {
+            let Some(b) = self.bar(i) else { break };
+            pv += (b.high + b.low + b.close) / 3.0 * b.volume;
+            v += b.volume;
+            if i + 1 >= from && v > 0.0 {
+                out.push((self.time.x(i as f64) as f32, scale.y(pv / v) as f32, 0.0));
+            }
+        }
+        out
+    }
+
+    /// The volume traded between a profile's two times in rows of price, each
+    /// bar's spread evenly over its range; the busiest row first.
+    fn volume_profile(&self, shape: &DrawingShape, scale: &PriceScale, at: &[(f32, f32)]) -> Vec<(f32, f32, f32)> {
+        const ROWS: usize = 24;
+        let (Some(la), Some(lb)) = (self.drawing_logical(shape, shape.points[0].time), self.drawing_logical(shape, shape.points[1].time)) else { return Vec::new() };
+        let last = self.total_bars().saturating_sub(1) as f64;
+        let (i0, i1) = (la.min(lb).ceil().max(0.0) as usize, la.max(lb).floor().min(last) as usize);
+        let bars: Vec<_> = (i0..=i1).filter_map(|i| self.bar(i)).collect();
+        let (Some(lo), Some(hi)) = (bars.iter().map(|b| b.low).reduce(f64::min), bars.iter().map(|b| b.high).reduce(f64::max)) else { return Vec::new() };
+        if hi <= lo {
+            return Vec::new();
+        }
+        let step = (hi - lo) / ROWS as f64;
+        let mut vol = [0.0f64; ROWS];
+        for b in &bars {
+            let span = (b.high - b.low).max(step * 1e-6);
+            for (r, cell) in vol.iter_mut().enumerate() {
+                let (bot, top) = (lo + step * r as f64, lo + step * (r + 1) as f64);
+                let overlap = (b.high.min(top) - b.low.max(bot)).max(0.0);
+                *cell += b.volume * if b.high > b.low { overlap / span } else if b.low >= bot && b.low < top { 1.0 } else { 0.0 };
+            }
+        }
+        let most = vol.iter().copied().fold(0.0, f64::max);
+        if most <= 0.0 {
+            return Vec::new();
+        }
+        let reach = (at[0].0 - at[1].0).abs() * 0.7;
+        let mut rows: Vec<(f32, f32, f32)> = (0..ROWS).map(|r| (scale.y(lo + step * (r + 1) as f64) as f32, scale.y(lo + step * r as f64) as f32, (vol[r] / most) as f32 * reach)).collect();
+        let poc = (0..ROWS).fold(0, |m, r| if vol[r] > vol[m] { r } else { m });
+        rows.swap(0, poc);
+        rows
     }
 
     /// The closes between a regression's two times fitted to a line, and the
@@ -3122,6 +3330,7 @@ impl Chart {
             axis_x: pane.plot.w,
             bar_x: hovered.map(|i| self.time.x(i as f64) as f32),
             alert: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.alert_handle_at(x, y)),
+            live: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.live_at(x, y)),
             flow: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.flow_at(x, y)),
             footprint: self.crosshair.filter(|_| self.tool.is_none() && matches!(self.drag, Drag::None)).and_then(|(x, y)| self.footprint_at(x, y)),
             tpo: self
@@ -4175,8 +4384,9 @@ mod tests {
         c.set_hidden("stochrsi:14:14:3:3");
         assert!(!c.studies[0].lines.is_empty() && c.studies[1].lines.is_empty(), "shown again, worked out at once");
         c.set_live(Some(tick(132.5)));
+        c.settle_live(i64::MAX);
         let ticked = c.studies[0].clone();
-        c.refresh_open_interest();
+        c.refresh_studies(StudyKind::OpenInterest);
         assert_eq!(ticked.candles, c.studies[0].candles, "the forming bar alone, as the whole would have it");
         assert_eq!(ticked.lines.last().map(|l| l.values.clone()), c.studies[0].lines.last().map(|l| l.values.clone()));
         // The steps from the forming bar's open on, 500 to 519, in dollars at its last price.
@@ -4844,7 +5054,7 @@ mod tests {
         let meta = format!(
             "pane\t1\nplot\tline\t{blue}\t15\t0\t0\t0\tA\nplot\thistogram\t-\t15\t0\t0\t0\tB\nfill\t0\t1\t{blue}\nmark\t1\t{red}\tSell\nline\t{blue}\t20\t1\t2\nlabel\t{red}\t0\t0\t1\t0\tHH\x1f+2%\nbox\t{blue}\t{red}\t10\nbg\ntable\t2\t0\ncell\t1\t0\t{red}\t0\tAvg rise\n"
         );
-        c.set_formula("fx-abc:14", "Mine 14", &meta, &values);
+        c.set_formula("fx-abc:14", "Mine 14", &meta, &values, false);
         let study = c.formulas.iter().find(|s| s.id == "fx-abc:14").expect("kept");
         assert_eq!((study.group, study.lines.len(), study.fills.len(), study.markers.len()), (Group::Formula(0), 2, 1, 1));
         assert_eq!(study.lines[0].rgba, Some(blue));
@@ -4862,9 +5072,9 @@ mod tests {
         assert!(frame.texts.iter().any(|t| t.text == "Avg rise"), "the table");
         assert!(c.panes.iter().any(|p| p.group == Group::Formula(0)), "drawn below the chart");
         // Values for other bars than the chart's are let go; an error is said in the legend.
-        c.set_formula("fx-abc:14", "Mine 14", &meta, &values[..10]);
+        c.set_formula("fx-abc:14", "Mine 14", &meta, &values[..10], false);
         assert_eq!(c.formulas[0].lines.len(), 2, "the last good lines stand");
-        c.set_formula("fx-bad", "Bad", "error\t3\t5\tema(value, length)\n", &[]);
+        c.set_formula("fx-bad", "Bad", "error\t3\t5\tema(value, length)\n", &[], false);
         assert_eq!(c.formulas[1].stats, vec![("Error", "line 3: ema(value, length)".to_string())]);
         c.keep_formulas("fx-bad");
         assert!(c.formulas.iter().all(|s| s.id != "fx-abc:14"));
@@ -4877,7 +5087,7 @@ mod tests {
         let mut values: Vec<f64> = (0..n).map(|i| i as f64).collect();
         values.extend((0..n).map(|_| f64::from(0xffeb_3bff_u32)));
         let meta = "plot\tline\t4278190335\t15\t0\t26\t0\tLead\nbars\n";
-        c.set_formula("fx-lead", "Lead", meta, &values);
+        c.set_formula("fx-lead", "Lead", meta, &values, false);
         let study = &c.formulas[0];
         assert_eq!(study.lines[0].values.len(), n + 26, "on into the space ahead of the newest bar");
         assert_eq!((study.lines[0].values[25], study.lines[0].values[26]), (None, Some(0.0)));
@@ -4995,6 +5205,38 @@ mod tests {
         assert!((c.panes[0].scale.y(points[1].price) - 150.0).abs() < 1e-6);
         assert_eq!(events[1], Event::ToolFinished);
         assert_eq!(c.tool(), None);
+    }
+
+    #[test]
+    fn a_ribbon_cross_on_the_forming_bar_is_drawn_not_a_crash() {
+        let mut c = Chart::new(ChartTimeframe::H1);
+        c.resize(1000.0, 600.0, 1.0);
+        // Falling for a long while: the fast line under the slow one.
+        let bars: Vec<Candle> = (0..300).map(|i| {
+            let p = 1000.0 - i as f64;
+            Candle { open_time: 1_700_000_000_000 - 1_700_000_000_000 % HOUR + i as i64 * HOUR, open: p + 0.5, high: p + 1.0, low: p - 1.0, close: p, volume: 1.0, quote_volume: None, taker_buy: None }
+        }).collect();
+        let forming = bars[299].open_time + HOUR;
+        c.set_candles(bars);
+        c.render(1_800_000_000_000);
+        // Then the forming bar leaps: the fast line crosses up on it, past the closed candles.
+        c.set_live(Some(LiveBar { open_time: forming, open: 701.0, high: 2000.0, low: 700.0, close: 2000.0, volume: 1.0, closed: false }));
+        c.settle_live(i64::MAX);
+        assert!(c.engine.crosses.iter().any(|x| x.index == 300), "the cross is on the forming bar: {:?}", c.engine.crosses.iter().map(|x| x.index).collect::<Vec<_>>());
+        c.render(1_800_000_000_000);
+    }
+
+    #[test]
+    fn a_trading_line_is_named_and_priced_at_its_right_end() {
+        let mut c = chart();
+        let price = c.panes[0].scale.price(180.0);
+        let mut line = DrawingShape::new(Some(-2_000_000), DrawingKind::Horizontal, vec![Anchor { time: c.times[10], price }]);
+        line.label = Some("Long 0.01 · +$2.10 (+0.30%) ≈ −".into());
+        line.style = DrawingStyle::from_pairs([("labelRight", "1"), ("priceLabels", "1"), ("dash", "dashed"), ("live", "entry"), ("textBg", "#000000")]);
+        c.set_drawings(vec![line]);
+        let frame = c.render(1_800_000_000_000).clone();
+        let t = frame.texts.iter().find(|t| t.text.starts_with("Long 0.01")).expect("the line's label");
+        assert!(t.align == Align::Right && t.text.ends_with(&format_price(price, Some(c.precision()))), "named and priced as one, at the right: {:?}", t.text);
     }
 
     #[test]
@@ -5443,6 +5685,60 @@ mod tests {
         assert_eq!(c.drawing_at(300.0, 250.0), None);
         let price = format_price(tag.price, Some(c.precision()));
         assert!(c.render(0).texts.iter().any(|t| t.text == price), "{price} on the tag");
+    }
+
+    #[test]
+    fn a_fib_extension_lays_its_move_off_from_its_third_point_and_time_zones_count_bars() {
+        let mut c = chart();
+        let pts = vec![c.anchor_at(100.0, 300.0).unwrap(), c.anchor_at(200.0, 200.0).unwrap(), c.anchor_at(250.0, 260.0).unwrap()];
+        let mut ext = DrawingShape::new(Some(4), DrawingKind::FibExt, pts);
+        ext.style = DrawingStyle::from_pairs([("levels", "1,1")]);
+        let zones = DrawingShape::new(Some(5), DrawingKind::FibTime, vec![c.anchor_at(100.0, 400.0).unwrap(), c.anchor_at(120.0, 400.0).unwrap()]);
+        c.set_drawings(vec![ext, zones]);
+        // The 100% level: the first move's 100px rise, from the third point at 260.
+        assert_eq!(c.drawing_at(300.0, 160.0), Some(4));
+        assert_eq!(c.drawing_at(300.0, 200.0), None, "not at the move's own end");
+        // Zones at 0, 1, 2, 3, 5, 8 spans: 100, 120, 140, 160, 200, 260.
+        assert_eq!(c.drawing_at(260.0, 450.0), Some(5));
+        assert_eq!(c.drawing_at(230.0, 450.0), None, "between the 5th and the 8th");
+    }
+
+    #[test]
+    fn an_anchored_vwap_runs_from_its_bar_and_a_profile_puts_its_busiest_row_first() {
+        let mut c = chart();
+        let anchor = c.anchor_at(200.0, 300.0).unwrap();
+        let (a, b) = (c.anchor_at(150.0, 300.0).unwrap(), c.anchor_at(450.0, 300.0).unwrap());
+        c.set_drawings(vec![DrawingShape::new(Some(1), DrawingKind::AnchoredVwap, vec![anchor]), DrawingShape::new(Some(2), DrawingKind::VolumeProfile, vec![a, b])]);
+        let vwap = c.place(&c.drawings[0], false).unwrap();
+        assert!(vwap.series.len() > 2 && (vwap.series[0].0 - 200.0).abs() < c.time.bar_spacing as f32, "from its bar: {:?}", vwap.series.first());
+        let profile = c.place(&c.drawings[1], false).unwrap();
+        assert_eq!(profile.series.len(), 24);
+        assert!(profile.series.iter().all(|r| r.2 <= profile.series[0].2 + 0.01), "the point of control is the longest row");
+        assert!((profile.series[0].2 - 300.0 * 0.7).abs() < 0.5);
+    }
+
+    #[test]
+    fn a_bars_pattern_copies_its_range_to_its_third_point() {
+        let mut c = chart();
+        let pts = vec![c.anchor_at(150.0, 300.0).unwrap(), c.anchor_at(250.0, 300.0).unwrap(), c.anchor_at(400.0, 220.0).unwrap()];
+        c.set_drawings(vec![DrawingShape::new(Some(7), DrawingKind::BarsPattern, pts.clone())]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let (la, lb) = (c.drawing_logical(&c.drawings[0], pts[0].time).unwrap(), c.drawing_logical(&c.drawings[0], pts[1].time).unwrap());
+        assert_eq!(placed.series.len(), 2 * ((lb.round() - la.round()) as usize + 1), "a wick and a body for each bar in the range");
+        assert!((placed.series[0].0 - placed.points[2].0).abs() < c.time.bar_spacing as f32, "the copy starts at the third point's bar");
+        assert!((placed.series[1].1 - 220.0).abs() < 1.0, "its first bar opens at the third point's price: {:?}", placed.series[1]);
+    }
+
+    #[test]
+    fn a_fills_arrow_sits_under_its_bar_whatever_its_price() {
+        let mut c = chart();
+        let at = c.anchor_at(300.0, 100.0).unwrap();
+        let mut up = DrawingShape::new(Some(-5), DrawingKind::MarkUp, vec![at]);
+        up.style = DrawingStyle::from_pairs([("atBar", "1")]);
+        c.set_drawings(vec![up]);
+        let placed = c.place(&c.drawings[0], false).unwrap();
+        let bar = c.bar(c.drawing_logical(&c.drawings[0], at.time).unwrap().round() as usize).unwrap();
+        assert!((placed.points[0].1 - (c.panes[0].scale.y(bar.low) as f32 + 4.0)).abs() < 0.5, "under the low: {:?}", placed.points[0]);
     }
 
     #[test]
@@ -6007,6 +6303,65 @@ mod tests {
         assert_eq!(c.legend().index, Some(500));
         c.set_live(Some(LiveBar { open_time: last.open_time, open: 1.0, high: 1.0, low: 1.0, close: 1.0, volume: 1.0, closed: false }));
         assert!(c.live.is_none(), "a bar that is already stored is not forming");
+    }
+
+    #[test]
+    fn the_indicators_run_to_the_forming_bar_and_move_with_it() {
+        const T: i64 = 1_800_000_000_000;
+        let mut c = chart();
+        c.set_studies("sma:3,bb:20:2");
+        let n = c.candles().len();
+        let last = *c.candles().last().unwrap();
+        let closes: Vec<f64> = c.candles()[n - 2..].iter().map(|b| b.close).collect();
+        let tick = |close: f64| LiveBar { open_time: last.open_time + HOUR, open: close, high: close, low: close, close, volume: 1.0, closed: false };
+        c.set_live(Some(tick(200.0)));
+        c.render(T);
+        let sma = |c: &Chart| c.studies[0].lines[0].values.clone();
+        assert_eq!(sma(&c).len(), n + 1);
+        let near = |v: Option<f64>, want: f64| v.is_some_and(|v| (v - want).abs() < 1e-9);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 200.0) / 3.0));
+        assert_eq!(c.engine.ema12.len(), n + 1, "the ribbon too");
+        c.set_live(Some(tick(230.0)));
+        assert_eq!(c.studies[0].lines[0].values.len(), n + 1);
+        c.render(T + 50);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 200.0) / 3.0), "not yet: a tick within the bar waits its turn");
+        assert!(!c.needs_render(T + 60) && c.needs_render(T + 100));
+        c.render(T + 100);
+        assert!(near(sma(&c)[n], (closes[0] + closes[1] + 230.0) / 3.0), "a tick within the bar moves it");
+        assert!(c.studies[1].lines.iter().all(|l| l.values.len() == n + 1));
+        c.set_live(None);
+        c.render(T + 200);
+        assert_eq!(sma(&c).len(), n, "gone with the forming bar");
+    }
+
+    #[test]
+    fn a_tick_within_the_bar_works_the_last_bars_out_as_the_whole_would() {
+        let mut c = Chart::new(ChartTimeframe::H1);
+        c.resize(1000.0, 600.0, 1.0);
+        c.set_candles(candles(6000));
+        c.set_studies("ema:200,sma:50,bb:20:2,rsi:14,stochrsi:14:14:3:3,macd:12:26:9,atr:14,keltner:20:2:10,ichimoku:9:26:52:26,vwap:0:1:2:3");
+        let last = *c.candles().last().unwrap();
+        let tick = |close: f64| LiveBar { open_time: last.open_time + HOUR, open: 400.0, high: 420.0, low: 380.0, close, volume: 50.0, closed: false };
+        c.set_live(Some(tick(400.0)));
+        c.render(0);
+        for (k, close) in [410.0, 385.5, 419.0].into_iter().enumerate() {
+            c.set_live(Some(tick(close)));
+            c.render(1_000 * (k as i64 + 1));
+            assert!(c.tails.iter().any(|t| *t < 6000 / 2), "worked out over the last bars");
+            let inputs = c.study_inputs();
+            for (spec, study) in c.study_specs.iter().zip(&c.studies) {
+                let whole = compute_study_with(spec, &c.bars, &inputs);
+                for (a, b) in study.lines.iter().zip(&whole.lines) {
+                    assert_eq!(a.values.len(), b.values.len());
+                    for (x, y) in a.values.iter().zip(&b.values) {
+                        assert!(x.zip(*y).map_or(x == y, |(x, y)| (x - y).abs() <= 1e-6 * x.abs().max(1.0)), "{} {}: {x:?} against {y:?}", study.id, a.key);
+                    }
+                }
+            }
+            let whole = engine_series_with(&c.bars, c.styles.lengths());
+            assert!((c.engine.ema200.last().unwrap().unwrap() - whole.ema200.last().unwrap().unwrap()).abs() < 1e-6);
+            assert_eq!(c.engine.crosses, whole.crosses);
+        }
     }
 
     #[test]

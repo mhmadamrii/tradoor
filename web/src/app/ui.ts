@@ -6,7 +6,7 @@ import type { Style } from '../lib/drawing-style';
 import { readPref, writePref } from '../lib/prefs';
 
 export type Overlay =
-  | { kind: 'symbol'; panelId: string | null; initial: string; /** Where in a watchlist to add it. */ at?: number }
+  | { kind: 'symbol'; panelId: string | null; initial: string; /** Where in a watchlist to add it. */ at?: number; /** The exchange the search opens on: a trading account's. */ exchange?: string }
   | { kind: 'indicators'; panelId: string }
   | { kind: 'tpoSettings'; panelId: string }
   | { kind: 'palette' }
@@ -42,7 +42,42 @@ export interface ChartController {
   deleteSelected(): void;
   drawingCount(): number;
   clearDrawings(): void;
+  /** The chart's id, and its drawings for the layers panel: each one shown,
+   *  restyled (hidden, grouped), copied or deleted from there. */
+  id: string;
+  drawings(): { id: number; kind: string; label: string | null; style: Record<string, string | number | boolean>; createdAt: number }[];
+  selectDrawing(id: number | null): void;
+  restyleDrawing(id: number, patch: Record<string, string | number | boolean>): void;
+  cloneDrawing(id: number): void;
+  removeDrawing(id: number): void;
 }
+
+/**
+ * A price field waiting for a chart click: while one has focus (and until
+ * another field takes it), a click on a chart fills it with the price there
+ * instead of panning. `pickPrice` wires a field to it.
+ */
+export const [pricePick, setPricePick] = createSignal<{ set(price: number): void } | null>(null);
+
+/** Props for an <input> whose price a chart click can fill: `{...pickPrice(setX)}`. */
+export const pickPrice = (set: (price: number) => void) => ({
+  'data-pick': '',
+  onFocus: () => setPricePick({ set }),
+});
+
+// Another field taken leaves the chart to its own clicks again; a click on a chart takes no focus.
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', (e) => {
+    if (pricePick() && !(e.target instanceof HTMLElement && e.target.hasAttribute('data-pick'))) setPricePick(null);
+  });
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && pricePick() && setPricePick(null));
+}
+
+/** The section Settings opens on: the last one, or the one asked for (a Trade panel asks for trading). */
+export const [settingsSection, setSettingsSection] = createSignal('account');
+
+/** The chart whose layers panel is open, by id. */
+export const [layersOpen, setLayersOpen] = createSignal<string | null>(null);
 
 export const chartControllers = new Map<string, ChartController>();
 /**
@@ -166,6 +201,9 @@ export interface ShownTrades {
   tone: 'bull' | 'bear' | '';
 }
 export const [shownTrades, setShownTrades] = createSignal<ShownTrades | null>(null);
+
+/** What the order system lays over a market's charts — its orders, positions, fills and algos — by market (trade/chart-live). */
+export const [liveShapes, setLiveShapes] = createSignal<Record<string, ShownTrades['parts']>>({});
 
 /** The panel whose tab is being dragged, while it is. */
 export const [dragging, setDragging] = createSignal<string | null>(null);

@@ -1,0 +1,33 @@
+/* A chart's object tree (LayersPanel): beside the rail on a wide screen, a sheet on a phone. */
+.layers { position: fixed; top: 64px; left: 46px; z-index: 45; display: flex; flex-direction: column; width: 300px; max-height: calc(100vh - 96px); max-height: calc(100dvh - 96px); border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 30px #000a; color: var(--text); font-size: .75rem; }
+.layers > header { display: flex; align-items: center; gap: 8px; flex: none; height: 38px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); }
+.layers .ltitle { font-weight: 700; }
+.layers .lcount { color: var(--dim); font-size: .6875rem; }
+.layers .lx { margin-left: auto; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; color: var(--muted); }
+.layers .ltools { display: flex; align-items: center; gap: 2px; flex: none; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.layers .ltools button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 4px; color: var(--muted); font-size: .6875rem; }
+.layers .ltools button:hover:not(:disabled) { background: var(--surface-3); color: var(--primary); }
+.layers .ltools button:disabled { opacity: 0.35; }
+.layers .ltools button.del:hover:not(:disabled) { color: var(--bear); }
+.layers .lbody { flex: 1 1 auto; min-height: 0; padding: 4px 0; overflow-y: auto; }
+.layers .lnone { margin: 0; padding: 14px 12px; color: var(--dim); }
+.layers .lrow { display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 6px 0 8px; }
+.layers .lrow:hover, .layers .lrow.on { background: var(--surface-2); }
+.layers .lrow.sub { padding-left: 26px; }
+.layers .lrow.off .lname { opacity: 0.45; }
+.layers .lrow input[type='checkbox'] { flex: none; width: 14px; height: 14px; accent-color: var(--primary); }
+.layers .lname { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 28px; color: var(--text); text-align: left; }
+.layers .lname span:not(.lcount) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers .lname svg { flex: none; color: var(--muted); }
+.layers .group .lname { font-weight: 600; }
+.layers .lfold { display: flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 28px; color: var(--dim); }
+.layers .lfold[aria-expanded='false'] svg { transform: rotate(-90deg); }
+.layers .lact { display: flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; border-radius: 4px; color: var(--dim); }
+.layers .lact:hover { background: var(--surface-3); color: var(--primary); }
+.layers .lact.del:hover { color: var(--bear); }
+.layers .lrename { flex: 1; min-width: 0; height: 24px; }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .layers { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 72dvh; padding-bottom: env(safe-area-inset-bottom); border-radius: 16px 16px 0 0; }
+  .layers .lrow { min-height: 40px; }
+  .layers .lact { width: 34px; height: 34px; }
+}

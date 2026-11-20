@@ -7,5 +7,7 @@ data
 web/node_modules
 web/dist
 web/src/wasm/pkg
+web/src/wasm/trade
+web/src/wasm/lighter
 *.log
 docs/screenshots

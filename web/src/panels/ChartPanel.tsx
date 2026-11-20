@@ -5,7 +5,7 @@
  */
 import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from 'solid-js';
 import { lazy } from '../lib/lazy';
-import { armedTool, chartControllers, controllersChanged, covered, drawingsChanged, magnet, mobile, setArmedTool, setControllersChanged, setDrawingsChanged, setMobileMenu, setOverlay, setShownPattern, setShownTrades, setStudyEditing, sharedRail, shownPattern, shownTrades, smoothZoom, studyEditing, type ShownPattern, type ShownTrades } from '../app/ui';
+import { pricePick, armedTool, chartControllers, controllersChanged, covered, drawingsChanged, layersOpen, liveShapes, setLiveShapes, magnet, mobile, setArmedTool, setControllersChanged, setDrawingsChanged, setLayersOpen, setMobileMenu, setOverlay, setShownPattern, setShownTrades, setStudyEditing, sharedRail, shownPattern, type ShownPattern, shownTrades, type ShownTrades, smoothZoom, studyEditing } from '../app/ui';
 import { Brand } from '../components/Brand';
 import { drawFavs, DrawingRail, favsOnChart, toolName, TOOLS } from './DrawingRail';
 import { call, debugClient, heardAt, holdChart, lastPrice, releaseChart, send } from '../engine/client';
@@ -45,11 +45,13 @@ import { behindMaximized, doc, marketOf, maximized, patchPanel, setPanelMarket, 
 import { tl, tlf } from '../lib/i18n';
 
 // Drawing settings load when a drawing is first selected: nobody needs them to see a chart.
+const LiveEntry = lazy(() => import('../trade/LiveEntry'));
 const DrawingSettings = lazy(() => import('../components/DrawingSettings').then((m) => ({ default: m.DrawingSettings })));
 const StudySettings = lazy(() => import('../components/StudySettings').then((m) => ({ default: m.StudySettings })));
 const AlertStyleSettings = lazy(() => import('../components/AlertStyleSettings').then((m) => ({ default: m.AlertStyleSettings })));
 const ChartMark = lazy(() => import('../components/ChartMark').then((m) => ({ default: m.ChartMark })));
 const DrawingToolbar = lazy(() => import('../components/DrawingToolbar').then((m) => ({ default: m.DrawingToolbar })));
+const LayersPanel = lazy(() => import('../components/LayersPanel').then((m) => ({ default: m.LayersPanel })));
 const DrawingSheet = lazy(() => import('../components/DrawingSheet').then((m) => ({ default: m.DrawingSheet })));
 const StrategyTester = lazy(() => import('../components/StrategyTester').then((m) => ({ default: m.StrategyTester })));
 
@@ -79,6 +81,21 @@ const TOOL_STEPS: Record<string, string> = {
   pricelabel: 'Price label: click the price',
   pin: 'Pin: click where it goes',
   flag: 'Flag: click where it goes',
+  fibext: 'Fib extension: click where the move starts, where it ends, then where to lay it off from · right-click or esc cancels',
+  fibchannel: 'Fib channel: click both ends of one line, then how wide · right-click or esc cancels',
+  fibtime: 'Fib time zone: click the start, then one span on · right-click or esc cancels',
+  fibfan: 'Fib fan: click the start of the move, then its end · right-click or esc cancels',
+  fibcircles: 'Fib circles: click the centre, then a point · right-click or esc cancels',
+  gannbox: 'Gann box: click one corner, then the opposite one · right-click or esc cancels',
+  gannfan: 'Gann fan: click the start, then the end of the 1×1 line · right-click or esc cancels',
+  avwap: 'Anchored VWAP: click the bar it starts from',
+  forecast: 'Forecast: click where it starts, then the target · right-click or esc cancels',
+  barspattern: 'Bars pattern: click the first bar, the last, then where the copy goes · right-click or esc cancels',
+  vprofile: 'Volume profile: click the first time, then the last · right-click or esc cancels',
+  signpost: 'Signpost: click where it stands',
+  comment: 'Comment: click where it points',
+  pricerange: 'Price range: click from, then to · right-click or esc cancels',
+  daterange: 'Date range: click from, then to · right-click or esc cancels',
   regression: 'Regression trend: click the first time, then the last · right-click or esc cancels',
   flat: 'Flat top/bottom: click both ends of the trendline, then the level · right-click or esc cancels',
   disjoint: 'Disjoint channel: click both ends of the first line, then where the second starts · right-click or esc cancels',
@@ -648,6 +665,23 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
   // Not over an alert's line: its own label is there, with its own delete.
   // A ratio is no market an alert can watch: no clock on its axis.
   const clock = () => (isRatio(market()) || replayPicking() ? null : (overClock() ?? (tool() === '' && !legend()?.alert && !overAlert() ? (legend()?.cursor ?? null) : null)));
+  /** The order system's entry line under the pointer, or under the TP / SL buttons the pointer is on. */
+  const [overEntry, setOverEntry] = createSignal<{ id: number; y: number } | null>(null);
+  const hoveredEntry = () => {
+    const h = overEntry() ?? legend()?.live ?? null;
+    const s = h && (liveShapes()[market()] ?? [])[-2_000_000 - h.id]?.style;
+    return h && s?.live === 'entry' ? h : null;
+  };
+  /** A TP or SL dragged out of the entry line: where it is, and the price there. */
+  const [exitDrag, setExitDrag] = createSignal<{ side: 'tp' | 'sl'; y: number; text: string } | null>(null);
+  const dragging = () => exitDrag() !== null;
+  const startExitDrag = (e: PointerEvent, side: 'tp' | 'sl', h: { id: number; y: number }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const style = (liveShapes()[market()] ?? [])[-2_000_000 - h.id]?.style;
+    const top = box.getBoundingClientRect().top;
+    if (style) void import('../trade/live-drag').then((m) => m.dragExit({ side, from: h.y, style, top, priceAt: (y) => call('priceAt', { id: sid, y }), show: setExitDrag, done: () => setOverEntry(null) }));
+  };
   const hoveredAlert = () => {
     const h = overAlert() ?? legend()?.alert ?? null;
     const a = h && alertState.alerts.find((x) => x.id === h.id && x.active);
@@ -795,6 +829,18 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       },
       drawingCount: () => drawings().length,
       clearDrawings: () => void clearDrawings(),
+      id,
+      drawings,
+      selectDrawing: setSelected,
+      restyleDrawing: (drawingId, patch) => {
+        const d = drawings().find((x) => x.id === drawingId);
+        if (d) void changeDrawing(drawingId, { style: { ...d.style, ...patch } });
+      },
+      cloneDrawing: (drawingId) => {
+        const d = drawings().find((x) => x.id === drawingId);
+        if (d) void saveDrawing({ kind: d.kind, points: d.points, label: d.label, style: d.style, timeframe: d.timeframe });
+      },
+      removeDrawing: (drawingId) => void deleteDrawing(drawingId),
     });
     setControllersChanged((n) => n + 1);
     onCleanup(() => {
@@ -906,11 +952,12 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
       id: sid,
       list: [
         ...drawings()
-          .filter((d) => visibleOn(d.style, tf))
+          .filter((d) => visibleOn(d.style, tf) && !d.style.hidden)
           .map((d) => ({ id: d.id, kind: d.kind, points: d.points, label: d.label, style: d.style, timeframe: d.timeframe })),
         ...(p ? patternParts(p).map((d, i) => ({ id: -1_000_000 - i, ...d, style: { ...d.style, locked: true } })) : []),
         ...(traded()?.parts ?? []).map((d, i) => ({ id: -3_000_000 - i, ...d, style: { ...d.style, locked: true } })),
-        ...(props.training?.overlay() ?? []).map((d, i) => ({ id: -2_000_000 - i, ...d, style: { ...d.style, locked: true } })),
+        // The order system's lines that a drag acts on stay unlocked (`live`); the rest the pointer passes through.
+        ...(props.training?.overlay() ?? liveShapes()[market()] ?? []).map((d, i) => ({ id: -2_000_000 - i, ...d, style: { ...d.style, locked: !d.style.live } })),
       ],
     });
   });
@@ -1341,12 +1388,24 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
     }
   }
 
+  /**
+   * An order system line let go somewhere: the entry dragged sets a take profit
+   * on the side the position gains and a stop on the side it loses, from the
+   * mark; an order dragged is moved. The lines are drawn afresh after, so a
+   * refusal leaves them where they were.
+   */
+  async function liveDrag(drawingId: number, at: number | undefined): Promise<void> {
+    const style = (liveShapes()[market()] ?? [])[-2_000_000 - drawingId]?.style;
+    await (await import('../trade/live-drag')).dropLine(style, at);
+    setLiveShapes({ ...liveShapes() });
+  }
+
   function onEvent(e: ChartEvent): void {
     switch (e.type) {
       case 'drawingCreated': {
         const { points, pane } = e;
         // A note and a callout ask for their words first.
-        if (e.kind === 'text' || e.kind === 'callout') setOverlay({ kind: 'note', save: (label) => void createDrawing(e.kind, points, label, pane) });
+        if (e.kind === 'text' || e.kind === 'callout' || e.kind === 'signpost' || e.kind === 'comment') setOverlay({ kind: 'note', save: (label) => void createDrawing(e.kind, points, label, pane) });
         // A preset (a ray, an extended line) is saved as its kind with the preset's look.
         else void createDrawing(e.kind, points, undefined, pane, engineKind(tool()) === e.kind ? tool() : e.kind);
         break;
@@ -1355,7 +1414,8 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         setSelected(e.id);
         break;
       case 'drawingChanged':
-        void changeDrawing(e.id, { points: e.points });
+        if (e.id <= -2_000_000 && e.id > -3_000_000 && !props.training) void liveDrag(e.id, e.points[0]?.price);
+        else void changeDrawing(e.id, { points: e.points });
         break;
       case 'editRequested':
         if (e.id >= 0) setEditing(e.id);
@@ -1818,8 +1878,8 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         <div
           ref={box}
           class="canvasbox"
-          classList={{ 'replay-picking': replayPicking() }}
-          style={{ cursor: cursor() }}
+          classList={{ 'replay-picking': replayPicking(), 'price-picking': !!pricePick() }}
+          style={{ cursor: pricePick() ? 'crosshair' : cursor() }}
           onPointerDown={(e) => {
             if (e.button === 2) return;
             replayPress = local(e);
@@ -1883,6 +1943,10 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
             if (e.pointerType === 'touch' && lift(e)) return;
             if (e.button !== 2) pointer('up', e);
             const p = local(e);
+            // A price field waiting for one: a click (not a drag, which still pans) fills it.
+            const pick = pricePick();
+            const at = legend()?.cursor?.price;
+            if (pick && e.button === 0 && at && at > 0 && replayPress && Math.hypot(p.x - replayPress.x, p.y - replayPress.y) <= REPLAY_CLICK_SLOP) pick.set(at);
             if (replayPicking() && e.button === 0 && replayPress && Math.hypot(p.x - replayPress.x, p.y - replayPress.y) <= REPLAY_CLICK_SLOP && p.x < axisX()) replayFrom(p.x);
           }}
           onPointerCancel={(e) => {
@@ -2066,6 +2130,26 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
                 <span class="dim">{h().mark.deltaUsd > 0 ? tl('net bought in a minute') : tl('net sold in a minute')}</span>
                 <span>{formatClock(h().mark.at)}</span>
                 <span class="dim">{formatPrice(h().mark.price, digitsFor(market(), h().mark.price))}</span>
+              </div>
+            )}
+          </Show>
+          <Show when={!props.training && hoveredEntry()}>
+            {(h) => (
+              <LiveEntry
+                shape={(liveShapes()[market()] ?? [])[-2_000_000 - h().id]}
+                market={market()}
+                y={h().y}
+                axisRight={(box?.clientWidth ?? 0) - axisX()}
+                onEnter={() => setOverEntry(h())}
+                onLeave={() => dragging() || setOverEntry(null)}
+                onDrag={(e, side) => startExitDrag(e, side, h())}
+              />
+            )}
+          </Show>
+          <Show when={exitDrag()}>
+            {(d) => (
+              <div class="live-ghost" classList={{ tp: d().side === 'tp', sl: d().side === 'sl' }} style={{ top: `${d().y}px`, width: `${axisX()}px` }}>
+                <span>{d().text}</span>
               </div>
             )}
           </Show>
@@ -2368,6 +2452,9 @@ export function ChartPanel(props: { panel: ChartPanelState; training?: TrainingC
         }}
       </Show>
 
+      <Show when={layersOpen() === id}>
+        <LayersPanel target={() => (controllersChanged(), chartControllers.get(id))} onClose={() => setLayersOpen(null)} />
+      </Show>
       <Show when={drawSheet()}>
         <DrawingSheet target={() => (controllersChanged(), chartControllers.get(id))} onClose={() => setDrawSheet(false)} />
       </Show>

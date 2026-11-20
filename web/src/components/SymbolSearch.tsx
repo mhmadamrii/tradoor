@@ -53,12 +53,14 @@ export function SymbolSearch(props: {
   ratios?: boolean;
   /** The chart's timeframe, whose candles a highlighted result has fetched before it is chosen. */
   timeframe?: string;
+  /** The exchange it opens filtered to. */
+  exchange?: string;
   onSelect(market: string): void;
   onClose(): void;
 }) {
   const [query, setQuery] = createSignal(props.initial);
   const [kind, setKind] = createSignal<Kind>('all');
-  const [exchange, setExchange] = createSignal<ExchangeId | null>(null);
+  const [exchange, setExchange] = createSignal<ExchangeId | null>(props.exchange && EXCHANGE_IDS.includes(props.exchange as ExchangeId) ? (props.exchange as ExchangeId) : null);
   const [sort, setSort] = createSignal<Sort>('popular');
   const [cursor, setCursor] = createSignal(0);
   const [markets] = createResource(() => catalog());

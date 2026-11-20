@@ -72,10 +72,32 @@ pub enum DrawingKind {
     Callout,
     Flag,
     Pin,
+    /// Fib levels of one move projected from a third point: where a trend may run to.
+    FibExt,
+    /// Vertical lines a Fibonacci number of the first span's bars on.
+    FibTime,
+    /// Rings round a point at the fib ratios of the distance to a second.
+    FibCircles,
+    /// Lines out from a point at the fib ratios of a move's rise and of its run.
+    FibFan,
+    /// A box cut at the Gann ratios both ways.
+    GannBox,
+    /// Lines out from a point at the Gann angles of a move: 1×1, 1×2, 2×1 and on.
+    GannFan,
+    /// A post with a note on it.
+    Signpost,
+    /// A note in a bubble.
+    Comment,
+    /// The volume-weighted average price from one bar on.
+    AnchoredVwap,
+    /// The volume traded at each price between two times.
+    VolumeProfile,
+    /// The bars between two times, copied faintly to a third point: a past move laid where it might repeat.
+    BarsPattern,
 }
 
 impl DrawingKind {
-    pub const ALL: [DrawingKind; 36] = [
+    pub const ALL: [DrawingKind; 47] = [
         Self::Path,
         Self::Brush,
         Self::Trendline,
@@ -112,6 +134,17 @@ impl DrawingKind {
         Self::Callout,
         Self::Flag,
         Self::Pin,
+        Self::FibExt,
+        Self::FibTime,
+        Self::FibCircles,
+        Self::FibFan,
+        Self::GannBox,
+        Self::GannFan,
+        Self::Signpost,
+        Self::Comment,
+        Self::AnchoredVwap,
+        Self::VolumeProfile,
+        Self::BarsPattern,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -152,6 +185,17 @@ impl DrawingKind {
             Self::Callout => "callout",
             Self::Flag => "flag",
             Self::Pin => "pin",
+            Self::FibExt => "fibext",
+            Self::FibTime => "fibtime",
+            Self::FibCircles => "fibcircles",
+            Self::FibFan => "fibfan",
+            Self::GannBox => "gannbox",
+            Self::GannFan => "gannfan",
+            Self::Signpost => "signpost",
+            Self::Comment => "comment",
+            Self::AnchoredVwap => "avwap",
+            Self::VolumeProfile => "vprofile",
+            Self::BarsPattern => "barspattern",
         }
     }
 
@@ -162,8 +206,8 @@ impl DrawingKind {
     /// Anchors the kind takes — the minimum for a path or brush.
     pub fn arity(self) -> usize {
         match self {
-            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin => 1,
-            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff => 3,
+            Self::Horizontal | Self::Vertical | Self::Cross | Self::Ray | Self::Text | Self::Circle | Self::MarkUp | Self::MarkDown | Self::PriceLabel | Self::Flag | Self::Pin | Self::Signpost | Self::Comment | Self::AnchoredVwap => 1,
+            Self::Long | Self::Short | Self::Channel | Self::Triangle | Self::RotRect | Self::Arc | Self::Curve | Self::Flat | Self::Disjoint | Self::Pitchfork | Self::Schiff | Self::ModSchiff | Self::FibExt | Self::BarsPattern => 3,
             Self::DCurve => 4,
             _ => 2,
         }
@@ -253,11 +297,17 @@ pub struct DrawingStyle {
     pub text_bg: Option<Color>,
     pub middle: bool,
     pub price_labels: bool,
+    /// A level's name at its right end, before its price, not at its left: the trading lines'.
+    pub label_right: bool,
     pub stats: bool,
     /// A trendline's angle on screen, from a level line at its first end.
     pub angle: bool,
     pub levels: Option<Vec<Level>>,
     pub level_labels: Option<bool>,
+    /// A measure of the price only (`p`) or the time only (`t`); both when unset.
+    pub axis: Option<u8>,
+    /// An arrow mark drawn at its bar rather than its price: under the low pointing up, over the high pointing down.
+    pub at_bar: bool,
     // Positions.
     pub profit_fill: Option<Color>,
     pub stop_fill: Option<Color>,
@@ -315,10 +365,13 @@ impl DrawingStyle {
             "textBg" => self.text_bg = color(),
             "middle" => self.middle = flag(),
             "priceLabels" => self.price_labels = flag(),
+            "labelRight" => self.label_right = flag(),
             "stats" => self.stats = flag(),
             "angle" => self.angle = flag(),
             "levels" => self.levels = Some(Level::parse_list(value)),
             "levelLabels" => self.level_labels = Some(flag()),
+            "axis" => self.axis = value.bytes().next(),
+            "atBar" => self.at_bar = flag(),
             "profitFill" => self.profit_fill = color(),
             "stopFill" => self.stop_fill = color(),
             "profitLine" => self.profit_line = color(),
@@ -390,7 +443,7 @@ impl DrawingStyle {
     }
 
     fn extends(&self, kind: DrawingKind) -> (bool, bool) {
-        (self.extend_left.unwrap_or(false), self.extend_right.unwrap_or(kind == DrawingKind::Fib))
+        (self.extend_left.unwrap_or(false), self.extend_right.unwrap_or(matches!(kind, DrawingKind::Fib | DrawingKind::FibExt)))
     }
 }
 
@@ -447,6 +500,11 @@ pub struct Placed<'a> {
     pub plot: Rect,
     /// A regression's fitted line and its bands, on screen: centre, upper and lower, each from its first time to its second.
     pub fit: Option<[(f32, f32); 6]>,
+    /// What a drawing reads off the bars: an anchored VWAP's line, or a volume
+    /// profile's rows as (top, bottom, length) with the point of control first.
+    pub series: Vec<(f32, f32, f32)>,
+    /// One bar's width on screen, for what draws bars.
+    pub bar_px: f32,
 }
 
 impl Placed<'_> {
@@ -578,6 +636,41 @@ pub fn figure(d: &Placed<'_>) -> Option<Figure> {
         let f = d.fit?;
         return Some((vec![(f[0], f[1]), (f[2], f[3]), (f[4], f[5])], Some([f[2], f[3], f[5], f[4]])));
     }
+    // Out from `a` through `to`, as far as the plot's edge the way it runs.
+    let ray = |to: (f32, f32)| {
+        let (dx, dy) = (to.0 - a.0, to.1 - a.1);
+        let edge = if dx >= 0.0 { d.plot.right() } else { d.plot.x };
+        let t = if dx.abs() > 0.5 { ((edge - a.0) / dx).max(1.0) } else { 1.0 };
+        (a, (a.0 + dx * t, a.1 + dy * t))
+    };
+    match kind {
+        DrawingKind::FibFan => {
+            let mut lines: Vec<_> = FAN_RATIOS.iter().map(|r| ray((b.0, a.1 + (b.1 - a.1) * r))).collect();
+            lines.extend(FAN_RATIOS.iter().map(|r| ray((a.0 + (b.0 - a.0) * r, b.1))));
+            lines.insert(0, ray(b));
+            return Some((lines, None));
+        }
+        DrawingKind::GannFan => {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let mut lines = vec![ray(b)];
+            for r in [2.0f32, 3.0, 4.0, 8.0] {
+                lines.push(ray((a.0 + dx, a.1 + dy * r)));
+                lines.push(ray((a.0 + dx * r, a.1 + dy)));
+            }
+            return Some((lines, None));
+        }
+        DrawingKind::GannBox => {
+            let corners = [a, (b.0, a.1), b, (a.0, b.1)];
+            let mut lines = vec![(a, b), (corners[1], corners[3])];
+            for r in [0.0f32, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0] {
+                let (x, y) = (a.0 + (b.0 - a.0) * r, a.1 + (b.1 - a.1) * r);
+                lines.push(((x, a.1), (x, b.1)));
+                lines.push(((a.0, y), (b.0, y)));
+            }
+            return Some((lines, Some(corners)));
+        }
+        _ => {}
+    }
     let c = *p.get(2)?;
     Some(match kind {
         DrawingKind::Flat => (vec![(a, b), ((a.0, c.1), (b.0, c.1))], Some([a, b, (b.0, c.1), (a.0, c.1)])),
@@ -603,6 +696,17 @@ pub fn figure(d: &Placed<'_>) -> Option<Figure> {
             (vec![(pivot, reach(pivot)), (b, eb), (c, ec), (b, c)], Some([b, eb, ec, c]))
         }
     })
+}
+
+/// A fib fan's cuts of its move's rise and of its run.
+const FAN_RATIOS: [f32; 4] = [0.382, 0.5, 0.618, 0.786];
+/// A fib circle's rings, as parts of the distance to its second point.
+const RING_RATIOS: [f32; 6] = [0.382, 0.5, 0.618, 1.0, 1.618, 2.618];
+
+/// A fib time zone's lines: the Fibonacci numbers of its first span on from
+/// its start, as far as the plot reaches.
+fn fib_times(x0: f32, span: f32, plot: Rect) -> impl Iterator<Item = (u32, f32)> {
+    [0u32, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233].into_iter().map(move |n| (n, x0 + span * n as f32)).take_while(move |(n, x)| *n == 0 || (span.abs() > 0.5 && *x >= plot.x && *x <= plot.right()))
 }
 
 fn centre(pts: &[(f32, f32)]) -> (f32, f32) {
@@ -738,6 +842,13 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
         (DrawingKind::MarkUp | DrawingKind::MarkDown | DrawingKind::Flag | DrawingKind::Pin | DrawingKind::PriceLabel, _, _) => {
             let (x, y) = a;
             match kind {
+                // A fill's arrow at its bar: slim, a fine stem under a small head, out of the candles' way.
+                DrawingKind::MarkUp | DrawingKind::MarkDown if style.at_bar => {
+                    let c = style.color.unwrap_or(if kind == DrawingKind::MarkUp { theme.bull } else { theme.bear });
+                    let s = if kind == DrawingKind::MarkUp { 1.0 } else { -1.0 };
+                    frame.triangle((x, y), (x - 4.5, y + 7.0 * s), (x + 4.5, y + 7.0 * s), c);
+                    stroke(frame, (x, y + 6.0 * s), (x, y + 16.0 * s), 1.5, c, Dash::Solid);
+                }
                 DrawingKind::MarkUp | DrawingKind::MarkDown => {
                     let c = style.color.unwrap_or(if kind == DrawingKind::MarkUp { theme.bull } else { theme.bear });
                     let s = if kind == DrawingKind::MarkUp { 1.0 } else { -1.0 };
@@ -770,11 +881,24 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             if kind != DrawingKind::Horizontal {
                 stroke(frame, (a.0, plot.y), (a.0, plot.bottom()), width, color, dash);
             }
-            if let Some(text) = &d.shape.label {
-                label(frame, plot.x + 6.0, a.1 - 3.0, text.clone(), Align::Left, Baseline::Bottom);
-            }
-            if style.price_labels {
-                frame.text(plot.right() - 4.0, a.1 - 2.0, format_price(prices[0], digits), text_color, Align::Right, Baseline::Bottom, font, None, Some(plot));
+            if style.label_right && kind == DrawingKind::Horizontal {
+                // Name and price as one, at the right end, by the price axis.
+                let text = match (&d.shape.label, style.price_labels) {
+                    (Some(t), true) if !t.is_empty() => format!("{t}  {}", format_price(prices[0], digits)),
+                    (Some(t), false) => t.clone(),
+                    (_, true) => format_price(prices[0], digits),
+                    _ => String::new(),
+                };
+                if !text.is_empty() {
+                    label(frame, plot.right() - 6.0, a.1 - 3.0, text, Align::Right, Baseline::Bottom);
+                }
+            } else {
+                if let Some(text) = &d.shape.label {
+                    label(frame, plot.x + 6.0, a.1 - 3.0, text.clone(), Align::Left, Baseline::Bottom);
+                }
+                if style.price_labels {
+                    frame.text(plot.right() - 4.0, a.1 - 2.0, format_price(prices[0], digits), text_color, Align::Right, Baseline::Bottom, font, None, Some(plot));
+                }
             }
         }
         (DrawingKind::Ray, _, _) => {
@@ -824,30 +948,45 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 label(frame, l + 4.0, t + 3.0, text.clone(), Align::Left, Baseline::Top);
             }
         }
-        (DrawingKind::Fib, Some(b), _) => {
-            let (left, right) = (a.0.min(b.0), a.0.max(b.0));
+        (DrawingKind::Fib | DrawingKind::FibExt, Some(b), _) => {
+            // An extension measures its first move and lays it off from its third point.
+            let (o, op) = match (kind, c) {
+                (DrawingKind::FibExt, Some(c)) => (c, prices[2]),
+                _ => (a, prices[0]),
+            };
+            let (left, right) = (a.0.min(b.0).min(o.0), a.0.max(b.0).max(o.0));
             let (x0, x1) = (if ext_left { plot.x } else { left }, if ext_right { plot.right() } else { right });
             let levels = style.levels_for(kind);
             let mut on: Vec<&Level> = levels.iter().filter(|l| l.on).collect();
             tradoor_core::sort::insertion_sort_by(&mut on, |p, q| p.value < q.value);
             if let Some(fill) = fill.filter(|_| style.fill_on == Some(true)) {
                 for pair in on.windows(2) {
-                    let y0 = a.1 + (b.1 - a.1) * pair[0].value as f32;
-                    let y1 = a.1 + (b.1 - a.1) * pair[1].value as f32;
+                    let y0 = o.1 + (b.1 - a.1) * pair[0].value as f32;
+                    let y1 = o.1 + (b.1 - a.1) * pair[1].value as f32;
                     frame.rect(x0, y0.min(y1), x1 - x0, (y1 - y0).abs(), pair[0].color.unwrap_or(fill).with_alpha(fill.a));
                 }
             }
             if !d.draft {
                 stroke(frame, a, b, 1.0, color.with_alpha(110), Dash::Dashed);
+                if kind == DrawingKind::FibExt {
+                    stroke(frame, b, o, 1.0, color.with_alpha(110), Dash::Dashed);
+                }
             }
             for level in on {
-                let y = a.1 + (b.1 - a.1) * level.value as f32;
-                let price = prices[0] + (prices[1] - prices[0]) * level.value;
+                let y = o.1 + (b.1 - a.1) * level.value as f32;
+                let price = op + (prices[1] - prices[0]) * level.value;
                 let c = level.color.unwrap_or(if level.value == 0.0 || level.value == 1.0 { color } else { color.with_alpha(180) });
                 stroke(frame, (x0, y), (x1, y), width, c, if d.draft { Dash::Dashed } else { level.dash });
                 if style.level_labels.unwrap_or(true) {
                     frame.text(x0 + 4.0, y - 2.0, format!("{}  ({})", trim_level(level.value), format_price(price, digits)), style.text_color.unwrap_or(c), Align::Left, Baseline::Bottom, font, None, Some(plot));
                 }
+            }
+        }
+        (DrawingKind::FibTime, Some(b), _) => {
+            let span = b.0 - a.0;
+            for (n, x) in fib_times(a.0, span, plot) {
+                stroke(frame, (x, plot.y), (x, plot.bottom()), width.min(1.5), color, if n == 0 { Dash::Solid } else { dash });
+                frame.text(x + 3.0, plot.y + 3.0, fixed(f64::from(n), 0), text_color, Align::Left, Baseline::Top, font, None, Some(plot));
             }
         }
         (DrawingKind::Measure, Some(b), _) => {
@@ -856,15 +995,26 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
             frame.rect(a.0.min(b.0), a.1.min(b.1), (b.0 - a.0).abs(), (b.1 - a.1).abs(), style.fill.unwrap_or(tone.with_alpha(40)));
             let mid_y = (a.1 + b.1) / 2.0;
             let mid_x = (a.0 + b.0) / 2.0;
-            stroke(frame, (a.0, mid_y), (b.0, mid_y), 1.0, tone, Dash::Solid);
-            stroke(frame, (mid_x, a.1), (mid_x, b.1), 1.0, tone, Dash::Solid);
-            arrow(frame, (a.0, mid_y), (b.0, mid_y), 1.0, tone);
-            arrow(frame, (mid_x, a.1), (mid_x, b.1), 1.0, tone);
+            // A price range has only its rise, a date range only its run.
+            let (time, price) = (style.axis != Some(b'p'), style.axis != Some(b't'));
+            if time {
+                stroke(frame, (a.0, mid_y), (b.0, mid_y), 1.0, tone, Dash::Solid);
+                arrow(frame, (a.0, mid_y), (b.0, mid_y), 1.0, tone);
+            }
+            if price {
+                stroke(frame, (mid_x, a.1), (mid_x, b.1), 1.0, tone, Dash::Solid);
+                arrow(frame, (mid_x, a.1), (mid_x, b.1), 1.0, tone);
+            }
             let (from, to) = (prices[0], prices[1]);
             let sign = if up { "+" } else { "" };
             let bars = d.bars.abs();
             let ticks = ((to - from) / 10f64.powi(-(d.precision as i32))).round();
-            let text = format!("{sign}{} ({sign}{}%) {sign}{}, {bars} bar{}", format_price(to - from, digits), fixed(pct(from, to), 2), fixed(ticks, 0), if bars == 1 { "" } else { "s" });
+            let bar_text = format!("{bars} bar{}", if bars == 1 { "" } else { "s" });
+            let text = match (time, price) {
+                (false, _) => format!("{sign}{} ({sign}{}%) {sign}{}", format_price(to - from, digits), fixed(pct(from, to), 2), fixed(ticks, 0)),
+                (_, false) => bar_text,
+                _ => format!("{sign}{} ({sign}{}%) {sign}{}, {bar_text}", format_price(to - from, digits), fixed(pct(from, to), 2), fixed(ticks, 0)),
+            };
             let y = if up { a.1.min(b.1) - 6.0 } else { a.1.max(b.1) + 6.0 };
             frame.text(mid_x, y, text, tone.contrast_text(), Align::Center, if up { Baseline::Bottom } else { Baseline::Top }, font, Some(tone), Some(plot));
         }
@@ -917,7 +1067,70 @@ pub fn paint(frame: &mut Frame, d: &Placed<'_>, plot: Rect, theme: &Theme) {
                 }
             }
         }
-        (DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff, Some(_), _) if figure(d).is_some() => {
+        (DrawingKind::AnchoredVwap, _, _) => {
+            let line: Vec<(f32, f32)> = d.series.iter().map(|p| (p.0, p.1)).collect();
+            frame.polyline(&line, width, color);
+            if let Some(end) = line.last() {
+                frame.text(end.0 + 4.0, end.1, "VWAP", text_color, Align::Left, Baseline::Middle, font, None, Some(plot));
+            }
+            // The anchor on the line itself: the VWAP of its own bar.
+            let at = line.first().copied().unwrap_or(a);
+            frame.circle(at.0, at.1, 3.0, color);
+        }
+        (DrawingKind::BarsPattern, Some(b), _) => {
+            // The copied range marked where it was taken from; the copy, a wick and a body a bar, where it was put.
+            let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+            stroke(frame, (x0, a.1), (x1, a.1), 1.0, color.with_alpha(110), Dash::Dotted);
+            let body = (d.bar_px * 0.6).max(1.0);
+            for pair in d.series.chunks(2) {
+                if let [(x, high, low), (_, open, close)] = pair {
+                    let up = close <= open;
+                    let tone = if up { theme.bull } else { theme.bear }.with_alpha(120);
+                    frame.rect(x - 0.5, *high, 1.0, (low - high).max(1.0), tone);
+                    frame.rect(x - body / 2.0, open.min(*close), body, (open - close).abs().max(1.0), tone);
+                }
+            }
+        }
+        (DrawingKind::VolumeProfile, Some(b), _) => {
+            let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+            for (i, &(top, bottom, len)) in d.series.iter().enumerate() {
+                let poc = i == 0;
+                frame.rect(x0, top, len, (bottom - top - 1.0).max(1.0), if poc { color.with_alpha(200) } else { fill.unwrap_or(color.with_alpha(70)) });
+                if poc {
+                    stroke(frame, (x0, (top + bottom) / 2.0), (x1, (top + bottom) / 2.0), 1.0, color, Dash::Dashed);
+                }
+            }
+            if let (Some(t), Some(btm)) = (d.series.iter().map(|r| r.0).reduce(f32::min), d.series.iter().map(|r| r.1).reduce(f32::max)) {
+                for (p, q) in [((x0, t), (x1, t)), ((x1, t), (x1, btm)), ((x1, btm), (x0, btm)), ((x0, btm), (x0, t))] {
+                    stroke(frame, p, q, 1.0, color.with_alpha(120), Dash::Dotted);
+                }
+            }
+        }
+        (DrawingKind::FibCircles, Some(b), _) => {
+            let r = (b.0 - a.0).hypot(b.1 - a.1);
+            stroke(frame, a, b, 1.0, color.with_alpha(110), Dash::Dashed);
+            for k in RING_RATIOS {
+                if let Some((mut ring, _)) = outline(DrawingKind::Disk, &[a, (a.0 + r * k, a.1)]) {
+                    ring.push(ring[0]);
+                    frame.polyline(&ring, width.min(1.5), if k == 1.0 { color } else { color.with_alpha(170) });
+                }
+                frame.text(a.0 + r * k + 3.0, a.1 - 2.0, trim_level(f64::from(k)), text_color, Align::Left, Baseline::Bottom, font, None, Some(plot));
+            }
+        }
+        (DrawingKind::Signpost | DrawingKind::Comment, _, _) => {
+            let (x, y) = a;
+            let text = d.shape.label.clone().unwrap_or_default();
+            let (bg, fg) = (style.text_bg.unwrap_or(color), style.text_color.unwrap_or(color.contrast_text()));
+            if kind == DrawingKind::Signpost {
+                stroke(frame, (x, y), (x, y - 30.0), 1.5, color, Dash::Solid);
+                frame.circle(x, y, 3.0, color);
+                frame.text(x, y - 30.0, text, fg, Align::Center, Baseline::Bottom, font, Some(bg), Some(plot));
+            } else {
+                frame.triangle((x, y), (x + 4.0, y - 10.0), (x + 12.0, y - 10.0), bg);
+                frame.text(x, y - 10.0, text, fg, Align::Left, Baseline::Bottom, font, Some(bg), Some(plot));
+            }
+        }
+        (DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff | DrawingKind::FibFan | DrawingKind::GannBox | DrawingKind::GannFan, Some(_), _) if figure(d).is_some() => {
             let Some((lines, band)) = figure(d) else { return };
             if let (Some(q), Some(fill)) = (band, fill) {
                 frame.triangle(q[0], q[1], q[2], fill);
@@ -1208,14 +1421,19 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             }
             best
         }
-        DrawingKind::Fib if d.points.len() >= 2 => {
+        DrawingKind::FibTime if d.points.len() >= 2 => {
             let (a, b) = (d.points[0], d.points[1]);
-            let (left, right) = (a.0.min(b.0), a.0.max(b.0));
+            fib_times(a.0, b.0 - a.0, plot).map(|(_, x)| (cursor.0 - x).abs()).fold(f32::INFINITY, f32::min)
+        }
+        DrawingKind::Fib | DrawingKind::FibExt if d.points.len() >= 2 => {
+            let (a, b) = (d.points[0], d.points[1]);
+            let o = if kind == DrawingKind::FibExt { d.points.get(2).copied().unwrap_or(a) } else { a };
+            let (left, right) = (a.0.min(b.0).min(o.0), a.0.max(b.0).max(o.0));
             let (x0, x1) = (if ext_left { plot.x } else { left }, if ext_right { plot.right() } else { right });
             if cursor.0 < x0 - 4.0 || cursor.0 > x1 + 4.0 {
                 return f32::INFINITY;
             }
-            style.levels_for(kind).iter().filter(|l| l.on).map(|l| (cursor.1 - (a.1 + (b.1 - a.1) * l.value as f32)).abs()).fold(f32::INFINITY, f32::min)
+            style.levels_for(kind).iter().filter(|l| l.on).map(|l| (cursor.1 - (o.1 + (b.1 - a.1) * l.value as f32)).abs()).fold(f32::INFINITY, f32::min)
         }
         DrawingKind::Trendline if d.points.len() >= 2 => {
             let (p, q) = extend(d.points[0], d.points[1], plot, ext_left, ext_right);
@@ -1230,7 +1448,26 @@ pub fn distance(d: &Placed<'_>, cursor: (f32, f32), plot: Rect) -> f32 {
             }
             None => f32::INFINITY,
         },
-        DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff => match figure(d) {
+        DrawingKind::BarsPattern => d.series.chunks(2).filter_map(|p| p.first()).map(|&(x, h, l)| if cursor.1 >= h && cursor.1 <= l { (cursor.0 - x).abs() } else { f32::INFINITY }).fold(f32::INFINITY, f32::min).min(d.points.iter().map(|p| (cursor.0 - p.0).hypot(cursor.1 - p.1)).fold(f32::INFINITY, f32::min)),
+        DrawingKind::AnchoredVwap => d.series.windows(2).map(|w| distance_to_segment(cursor, (w[0].0, w[0].1), (w[1].0, w[1].1))).fold(((cursor.0 - d.points[0].0).hypot(cursor.1 - d.points[0].1) - 4.0).max(0.0), f32::min),
+        DrawingKind::VolumeProfile if d.points.len() >= 2 => {
+            let (x0, x1) = (d.points[0].0.min(d.points[1].0), d.points[0].0.max(d.points[1].0));
+            match (d.series.iter().map(|r| r.0).reduce(f32::min), d.series.iter().map(|r| r.1).reduce(f32::max)) {
+                (Some(t), Some(b)) if cursor.0 >= x0 && cursor.0 <= x1 && cursor.1 >= t && cursor.1 <= b => 0.0,
+                (Some(t), Some(b)) => distance_to_segment(cursor, (x0, t), (x0, b)).min(distance_to_segment(cursor, (x1, t), (x1, b))),
+                _ => f32::INFINITY,
+            }
+        }
+        DrawingKind::FibCircles if d.points.len() >= 2 => {
+            let (a, b) = (d.points[0], d.points[1]);
+            let (r, at) = ((b.0 - a.0).hypot(b.1 - a.1), (cursor.0 - a.0).hypot(cursor.1 - a.1));
+            RING_RATIOS.iter().map(|k| (at - r * k).abs()).fold(f32::INFINITY, f32::min)
+        }
+        DrawingKind::Signpost | DrawingKind::Comment => {
+            let (x, y) = d.points[0];
+            ((cursor.0 - x).hypot(cursor.1 - (y - 22.0)) - 18.0).max(0.0)
+        }
+        DrawingKind::Regression | DrawingKind::Flat | DrawingKind::Disjoint | DrawingKind::Pitchfork | DrawingKind::Schiff | DrawingKind::ModSchiff | DrawingKind::FibFan | DrawingKind::GannBox | DrawingKind::GannFan => match figure(d) {
             Some((lines, band)) => {
                 let near = lines.iter().map(|(p, q)| distance_to_segment(cursor, *p, *q)).fold(f32::INFINITY, f32::min);
                 match band {

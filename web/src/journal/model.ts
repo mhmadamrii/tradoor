@@ -50,6 +50,8 @@ export interface Trade {
   qty: number;
   /** Its margin is what those coins are worth at the entry, over this. */
   leverage: number;
+  /** Synced from a trading account, `venue:network`; what the exchange filled, with no stop or target of its own. */
+  synced?: string | null;
   status: Status;
   openedAt: number | null;
   closedAt: number | null;

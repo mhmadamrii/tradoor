@@ -14,7 +14,7 @@ const isSectionItem = (v: unknown): v is string => typeof v === 'string' && isSe
 import { FAVORITE_TIMEFRAMES, isTimeframe, TIMEFRAMES, tfLonger, tfMs } from '../lib/timeframes';
 
 /** What a new panel can be. `tpo` is a preset: a chart drawn as TPO profiles. */
-export type PanelType = 'chart' | 'watchlist' | 'tpo' | 'values' | 'liquidations' | 'flow' | 'signals' | 'alerts' | 'dom' | 'tape' | 'econ';
+export type PanelType = 'chart' | 'watchlist' | 'tpo' | 'values' | 'liquidations' | 'flow' | 'signals' | 'alerts' | 'dom' | 'tape' | 'econ' | 'trade' | 'positions';
 
 /** How a footprint level reads, named as every footprint chart names them. */
 export const FOOTPRINT_MODES: readonly { value: string; label: string }[] = [
@@ -57,8 +57,8 @@ export function tpoFits(period: string, timeframe: string): boolean {
 export type LinkColor = 'green' | 'blue' | 'red' | 'yellow';
 
 export const LINK_COLORS: readonly LinkColor[] = ['green', 'blue', 'red', 'yellow'];
-export const PANEL_TYPES: readonly PanelType[] = ['chart', 'watchlist', 'tpo', 'values', 'dom', 'tape', 'liquidations', 'flow', 'signals', 'alerts', 'econ'];
-export const PANEL_TITLE: Record<PanelType, string> = { chart: 'Chart', watchlist: 'Watchlist', tpo: 'TPO', values: 'Values', liquidations: 'Liquidations', flow: 'Flow', signals: 'Signal', alerts: 'Alerts', dom: 'DOM', tape: 'Tape', econ: 'US Economic Calendar' };
+export const PANEL_TYPES: readonly PanelType[] = ['chart', 'watchlist', 'tpo', 'values', 'dom', 'tape', 'trade', 'positions', 'liquidations', 'flow', 'signals', 'alerts', 'econ'];
+export const PANEL_TITLE: Record<PanelType, string> = { chart: 'Chart', watchlist: 'Watchlist', tpo: 'TPO', values: 'Values', liquidations: 'Liquidations', flow: 'Flow', signals: 'Signal', alerts: 'Alerts', dom: 'DOM', tape: 'Tape', econ: 'US Economic Calendar', trade: 'Trade · Testnet', positions: 'Positions · Testnet' };
 
 interface PanelBase {
   id: string;
@@ -191,7 +191,20 @@ export interface EconPanelState extends PanelBase {
   scope: 'all' | 'core';
 }
 
-export type Panel = ChartPanelState | WatchlistPanelState | ValuesPanelState | LiquidationsPanelState | FlowPanelState | SignalsPanelState | AlertsPanelState | DomPanelState | TapePanelState | EconPanelState;
+/** The order ticket for its market, on Hyperliquid; see panels/TradePanel. */
+/** The order ticket; its kind and account are kept in the browser (trade/), not here. */
+export interface TradePanelState extends PanelBase {
+  type: 'trade';
+}
+
+
+/** The account's positions, orders, fills and what was done; see panels/PositionsPanel. */
+/** Positions, orders and the rest; its tab is kept in the browser (panels/PositionsPanel), not here. */
+export interface PositionsPanelState extends PanelBase {
+  type: 'positions';
+}
+
+export type Panel = ChartPanelState | WatchlistPanelState | ValuesPanelState | LiquidationsPanelState | FlowPanelState | SignalsPanelState | AlertsPanelState | DomPanelState | TapePanelState | EconPanelState | TradePanelState | PositionsPanelState;
 
 export interface SplitNode {
   kind: 'split';
@@ -302,6 +315,10 @@ export function newPanel(type: PanelType, from?: Partial<Pick<PanelBase, 'link' 
       return { ...base, type, minUsd: 0, unit: 'usd' };
     case 'econ':
       return { ...base, type, scope: 'all' };
+    case 'trade':
+      return { ...base, type };
+    case 'positions':
+      return { ...base, type };
   }
 }
 

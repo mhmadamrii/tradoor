@@ -17,6 +17,8 @@ import type { InnerBars } from '../engine/formula';
 import { TRADE_SIZE, type BacktestResult, type ChartBars, type StrategyDrawing, type StrategyRun } from '../engine/protocol';
 import { fundingKnown, fundingRates, type FundingRates } from './funding';
 import { parseMarket } from './markets';
+import { orderNotice as notice } from './backtest';
+import { readJson } from './prefs';
 
 const LOWER: [string, number][] = [
   ['1m', 60_000],
@@ -317,4 +319,16 @@ function tradesDrawn(trades: Float64Array, n: number): { meta: string; values: F
   marks.forEach((m, i) => all.set(m, i * n));
   all.set(lines, 4 * n);
   return { meta, values: all };
+}
+
+/**
+ * As the kit's `orderNotice` (lib/backtest), and a bar that closed with an
+ * order is also sent to an account where this market and timeframe's strategy
+ * is traded live (trade/strategy-live). Here, not there: lib/backtest is
+ * unit-tested away from a browser, and the order system is all browser.
+ */
+export function orderNotice(v: BacktestResult, seen: string): ReturnType<typeof notice> {
+  const n = notice(v, seen);
+  if (n.what && v.ok && (readJson(`strategyLive:${v.market}|${v.timeframe}`) as { on?: boolean } | null)?.on) void import('../trade/strategy-live').then((x) => x.act(v));
+  return n;
 }

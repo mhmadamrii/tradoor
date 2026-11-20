@@ -10,4 +10,5 @@ Deno.test('a preset is its kind drawn a set way', () => {
   assertEquals(engineKind('extended'), 'trendline');
   assertEquals(engineKind('rect'), 'rect');
   assertEquals(factoryStyle('extended'), { color: '#2962ff', width: 1.5, extendLeft: true, extendRight: true });
+  assertEquals(lookOf({ tool: 'fibchannel', color: '#ff0000' }), { color: '#ff0000' }, 'the tool is not part of the look');
 });

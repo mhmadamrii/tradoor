@@ -89,7 +89,7 @@ kbd { border: 1px solid var(--border); background: var(--surface-2); padding: 0 
 /* The marks drawn by CSS, not as paths in what loads first. Discord's in its own blurple. */
 .statusbar .dc { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E"); color: #5865f2; }
 .statusbar .dc:hover { color: #7b84f6; }
-.statusbar .gh { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1C5.92 1 1 5.92 1 12c0 4.87 3.15 8.98 7.52 10.44.55.1.76-.23.76-.52l-.01-2.05c-2.77.51-3.48-.67-3.7-1.29-.13-.32-.66-1.3-1.13-1.56-.39-.2-.94-.71-.02-.73.87-.01 1.49.8 1.7 1.13.99 1.66 2.57 1.2 3.2.91.1-.72.39-1.2.7-1.47-2.45-.28-5-1.23-5-5.43 0-1.2.43-2.19 1.13-2.96-.11-.27-.5-1.4.11-2.91 0 0 .92-.29 3.02 1.13a10.2 10.2 0 0 1 5.5 0c2.1-1.43 3.03-1.13 3.03-1.13.6 1.51.22 2.64.11 2.91.7.77 1.13 1.75 1.13 2.96 0 4.22-2.57 5.16-5.02 5.43.4.34.74 1 .74 2.04l-.01 3.02c0 .29.2.63.75.52A11.02 11.02 0 0 0 23 12c0-6.08-4.92-11-11-11z'/%3E%3C/svg%3E"); color: var(--dim); }
+.statusbar .gh { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1C5.92 1 1 5.92 1 12c0 4.87 3.15 8.98 7.52 10.44.55.1.76-.23.76-.52l-.01-2.05c-2.77.51-3.48-.67-3.7-1.29-.13-.32-.66-1.3-1.13-1.56-.39-.2-.94-.71-.02-.73.87-.01 1.49.8 1.7 1.13.99 1.66 2.57 1.2 3.2.91.1-.72.39-1.2.7-1.47-2.45-.28-5-1.23-5-5.43 0-1.2.43-2.19 1.13-2.96-.11-.27-.5-1.4.11-2.91 0 0 .92-.29 3.02 1.13a10.2 10.2 0 0 1 5.5 0c2.1-1.43 3.03-1.13 3.03-1.13.6 1.51.22 2.64.11 2.91.7.77 1.13 1.75 1.13 2.96 0 4.22-2.57 5.16-5.02 5.43.4.34.74 1 .74 2.04l-.01 3.02c0 .29.2.63.75.52A11.02 11.02 0 0 0 23 12c0-6.08-4.92-11-11-11z'/%3E%3C/svg%3E"); color: color-mix(in oklab, var(--text) 80%, var(--surface)); }
 .statusbar .gh:hover { color: var(--text); }
 
 /* tradoor messenger: its button beside the GitHub mark, with how many are here, and its room above it. */
@@ -767,6 +767,22 @@ table.venues tr.off td { color: var(--dim); }
 .subhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; padding: 3px 8px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface-2); }
 .note { padding: 5px 8px; font-size: .625rem; line-height: 1.5; color: var(--dim); }
 
+/* The order system's entry line, hovered: a TP and an SL to drag out of it (ChartPanel). */
+.live-entry { position: absolute; z-index: 6; display: flex; flex-direction: column; gap: 2px; }
+.live-entry.short { flex-direction: column-reverse; }
+.live-entry button { height: 20px; padding: 0 7px; border: 1px solid currentColor; border-radius: 3px; background: var(--surface); font-size: .625rem; font-weight: 700; cursor: ns-resize; touch-action: none; }
+.live-entry .tp { color: var(--bull); }
+.live-entry .sl { color: var(--bear); }
+.live-entry button:hover { background: var(--surface-3); }
+.live-ghost { position: absolute; left: 0; z-index: 6; height: 0; border-top: 1px dashed currentColor; pointer-events: none; }
+.live-ghost.tp { color: var(--bull); }
+.live-ghost.sl { color: var(--bear); }
+.live-ghost span { position: absolute; right: 8px; top: -18px; padding: 1px 6px; border-radius: 3px; background: currentColor; font-size: .625rem; font-weight: 700; }
+.live-ghost span { color: var(--bg); }
+.live-ghost.tp span { background: var(--bull); }
+.live-ghost.sl span { background: var(--bear); }
+.canvasbox.price-picking { outline: 1px dashed color-mix(in oklab, var(--primary) 60%, transparent); outline-offset: -1px; }
+
 /* ------------------------------------------------------------ phones
    One chart and nothing else (Layout's MobileShell): the panels a wide screen
    keeps beside it open over it from the menu in the chart's toolbar, and the
@@ -1164,7 +1180,7 @@ table.venues tr.off td { color: var(--dim); }
 .ref-row.lead { border-color: color-mix(in oklab, var(--primary) 40%, transparent); background: color-mix(in oklab, var(--primary) 6%, var(--surface-2)); }
 .ref-row.lead .who span { white-space: normal; line-height: 1.45; }
 .ref-row .new, .ref-card .new { padding: 1px 5px; border: 1px solid color-mix(in oklab, var(--primary) 50%, transparent); color: var(--primary); font-size: .5625rem; font-style: normal; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
-.ref-row .who span { color: var(--dim); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-row .who span { color: var(--muted); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-row .go { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); color: var(--primary); font-size: .6875rem; white-space: nowrap; transition: background 0.12s, color 0.12s; }
 .ref-row:hover .go { background: var(--primary); color: var(--bg); }
 /* At the foot, and meant to be seen: GitHub Sponsors' own pink. */
@@ -1173,9 +1189,13 @@ table.venues tr.off td { color: var(--dim); }
 .ref-sponsor .heart { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in oklab, #db61a2 18%, transparent); color: #db61a2; font-size: .9375rem; line-height: 1; }
 .ref-sponsor .who { flex: 1; display: grid; gap: 4px; min-width: 0; }
 .ref-sponsor .who b { font-size: .8125rem; font-weight: 600; }
-.ref-sponsor .who span { color: var(--dim); font-size: .6875rem; line-height: 1.45; }
+.ref-sponsor .who span { color: var(--muted); font-size: .6875rem; line-height: 1.45; }
 .ref-sponsor .go { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid color-mix(in oklab, #db61a2 55%, transparent); color: #db61a2; font-size: .6875rem; white-space: nowrap; transition: background 0.12s, color 0.12s; }
 .ref-sponsor:hover .go { background: #db61a2; color: #fff; }
+.ref footer span { color: var(--muted); }
+.ref-backers { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 14px 14px; color: var(--muted); font-size: .6875rem; }
+.ref-backers a { color: var(--text); text-decoration: none; }
+.ref-backers img { display: block; height: 18px; width: auto; }
 .ref-card { position: fixed; left: 12px; bottom: 34px; z-index: 79; width: min(330px, calc(100vw - 24px)); border: 1px solid var(--border); border-top: 2px solid var(--primary); background: var(--surface); box-shadow: 0 14px 44px #000d; font-size: .75rem; animation: toast-in 0.25s ease-out; }
 .ref-card > header { display: flex; align-items: center; padding: 8px 4px 0 12px; }
 .ref-card .eyebrow { display: flex; align-items: center; gap: 6px; flex: 1; color: var(--primary); font-size: .625rem; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -1187,7 +1207,7 @@ table.venues tr.off td { color: var(--dim); }
 .ref-card .lead .xlogo { flex: none; }
 .ref-card .lead .who { flex: 1; display: grid; gap: 3px; min-width: 0; }
 .ref-card .lead .who b { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-.ref-card .lead .who span { color: var(--dim); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-card .lead .who span { color: var(--muted); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-card .lead > svg:last-child { flex: none; color: var(--dim); }
 .ref-card .pair { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 12px; }
 .ref-card .pair a { display: flex; align-items: center; justify-content: center; gap: 7px; height: 36px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; transition: border-color 0.12s, color 0.12s; }
@@ -1530,6 +1550,14 @@ textarea.jr-in { resize: vertical; line-height: 1.5; }
 .jh-market { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .jh-market b { font-weight: 600; color: var(--text); }
 .jh-market .dim { overflow: hidden; text-overflow: ellipsis; font-size: .65625rem; }
+.jh-sync { display: inline-flex; align-items: center; gap: 4px; align-self: center; padding: 0 5px; border-radius: 999px; font-size: .59375rem; letter-spacing: .02em; color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); flex: none; }
+.jh-sync::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.jh-sync.test { color: var(--warn, #e0a03a); background: color-mix(in oklab, var(--warn, #e0a03a) 12%, transparent); }
+.jd-ex { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.jd-ex > div { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; background: var(--surface); min-width: 0; }
+.jd-ex b { font-weight: 600; font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jd-ex b.bear { color: var(--bear); }
+.jd-section h3 .jh-sync { margin-left: 6px; vertical-align: middle; }
 .jh-prices, .jh-strategy { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .jh-strategy { font-size: .6875rem; }
 .jh-r, .jh-pnl { text-align: right; white-space: nowrap; }

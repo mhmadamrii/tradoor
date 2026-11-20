@@ -6,7 +6,7 @@
  * delete along its foot.
  */
 import { For, Show } from 'solid-js';
-import { armedTool, cycleMagnet, magnet, setArmedTool, type ChartController } from '../app/ui';
+import { armedTool, cycleMagnet, magnet, setArmedTool, setLayersOpen, type ChartController } from '../app/ui';
 import { tl, tlf } from '../lib/i18n';
 import { Icon } from '../lib/icons';
 import { drawFavs, favsOnChart, GROUPS, showFavsOnChart, toggleDrawFav, toolName, TOOLS } from '../panels/DrawingRail';
@@ -72,6 +72,15 @@ export function DrawingSheet(props: { target: () => ChartController | undefined;
           </For>
         </div>
         <div class="ds-actions">
+          <button
+            onClick={() => {
+              setLayersOpen(props.target()?.id ?? null);
+              props.onClose();
+            }}
+          >
+            <Icon name="layers" size={18} />
+            <span>{tl('Layers')}</span>
+          </button>
           <button classList={{ on: magnet() !== 'off' }} onClick={cycleMagnet}>
             <Icon name="magnet" size={18} />
             <span>{tl(MAGNET_WORD[magnet()])}</span>

@@ -21,6 +21,8 @@ export interface Legend {
   barX: number | null;
   /** The alert line under the pointer. */
   alert: { id: number; y: number } | null;
+  /** An order system line under the pointer (a page-drawn, draggable one), and its y. */
+  live?: { id: number; y: number } | null;
   /** The flow mark under the pointer: which one, and where it sits. */
   flow: { index: number; x: number; y: number } | null;
   /** The footprint row under the pointer, as the screen groups it: its bar, the
@@ -277,6 +279,8 @@ export interface Calls {
   formulaDescribe: { args: { source: string }; result: FormulaDescription };
   studyCatalog: { args: Record<string, never>; result: StudyDefinition[] };
   key: { args: { id: string; key: string }; result: boolean };
+  /** The price at a height on a chart's main pane, null when it has none. */
+  priceAt: { args: { id: string; y: number }; result: number | null };
   /** `profile: false` skips the session profile; `bars` caps the history read (1,500 by default). */
   values: { args: { market: string; timeframe: string; basis: ProfileBasis; profile?: boolean; bars?: number }; result: IndicatorValues | null };
   /** The last `days` closed UTC days. */

@@ -903,14 +903,22 @@ function Row(props: { trade: Trade; price: (market: string, v: number | null) =>
       <span class="jh-market">
         <b>{symbolOf(t().market)}</b>
         <span class="dim">{venueLabel(t().market)}</span>
+        <Show when={t().synced}>{(s) => <Synced from={s()} />}</Show>
       </span>
       <span class="jh-prices num">
         <Show
           when={done()}
           fallback={
-            <>
+            <Show
+              when={!t().synced}
+              fallback={
+                <>
+                  {p(t().entry)} <span class="dim">·</span> {sizeText(t().qty)} <span class="dim">·</span> {lev(t().leverage)}
+                </>
+              }
+            >
               {p(t().entry)} <span class="dim">SL</span> {p(t().stop)} <span class="dim">TP</span> {p(t().target)}
-            </>
+            </Show>
           }
         >
           {p(t().entry)} <span class="dim">→</span> {p(t().exit)}
@@ -918,15 +926,65 @@ function Row(props: { trade: Trade; price: (market: string, v: number | null) =>
       </span>
       <span class="jh-strategy dim">{t().strategy}</span>
       <Badge trade={t()} />
-      <span class="jh-r num">{done() ? rText(rMultiple(t())) : <span class="dim">{plannedRR(t()).toFixed(2)} RR</span>}</span>
+      <span class="jh-r num">{t().synced ? <span class="dim">{lev(t().leverage)}</span> : done() ? rText(rMultiple(t())) : <span class="dim">{plannedRR(t()).toFixed(2)} RR</span>}</span>
       <span class="jh-pnl num">{done() ? money(pnl(t())) : ''}</span>
     </button>
   );
 }
 
+/** A synced trade as the exchange filled it: nothing here to edit, the next fill brings it up to date. */
+function Exchange(props: { trade: Trade; price: (v: number | null) => string; qtyOf: (q: number) => string }) {
+  const t = () => props.trade;
+  const cells = (): [string, string, string?][] => [
+    ['Entry', props.price(t().entry)],
+    ['Exit', isLive(t()) ? 'Open' : props.price(t().exit)],
+    ['Size', props.qtyOf(t().qty)],
+    ['Leverage', lev(t().leverage)],
+    ['Margin', money((t().qty * t().entry) / (t().leverage > 0 ? t().leverage : 1))],
+    ['Fees', money(-t().fees), 'bear'],
+  ];
+  return (
+    <section class="jd-section">
+      <h3>
+        {tl('From the exchange')} <Synced from={t().synced!} />
+      </h3>
+      <div class="jd-ex">
+        <For each={cells()}>
+          {([k, v, tone]) => (
+            <div>
+              <span class="jd-label">{tl(k)}</span>
+              <b class={`num ${tone ?? ''}`}>{v}</b>
+            </div>
+          )}
+        </For>
+      </div>
+      <p class="jd-hint dim">{tl('Read from the account’s fills and kept in step with them. The strategy and notes below are yours.')}</p>
+    </section>
+  );
+}
+
+/** `0.25`, `1,200`: a size in coins, as short as it reads. */
+const sizeText = (q: number): string => q.toLocaleString('en-US', { maximumSignificantDigits: 5 });
+/** `10×`. */
+const lev = (x: number): string => `${x > 0 ? +x.toFixed(1) : 1}×`;
+
+/** The mark on a trade the exchange wrote: a small pulse dot, testnet said aloud. */
+function Synced(props: { from: string }) {
+  const net = () => props.from.split(':')[1] ?? '';
+  return (
+    <span class={`jh-sync${net() === 'testnet' ? ' test' : ''}`} data-tip={`Synced from your ${venueName(props.from)} account${net() === 'testnet' ? ' on testnet' : ''}: what the exchange filled, kept up to date`}>
+      {net() === 'testnet' ? 'testnet' : 'synced'}
+    </span>
+  );
+}
+const venueName = (from: string): string => {
+  const v = from.split(':')[0] ?? '';
+  return v ? v[0]!.toUpperCase() + v.slice(1) : 'trading';
+};
+
 /** A trade's status in its outcome's colour: won green, lost red, even orange. */
 function Badge(props: { trade: Trade }) {
-  const tip = () => (props.trade.auto ? (props.trade.tracked ? 'Price decides this one' : 'Kept by hand: this market’s prices are not read here') : 'Set by hand');
+  const tip = () => (props.trade.synced ? 'The exchange’s fills decide this one' : props.trade.auto ? (props.trade.tracked ? 'Price decides this one' : 'Kept by hand: this market’s prices are not read here') : 'Set by hand');
   return (
     <span class={`jh-badge ${outcome(props.trade)}`} data-tip={tip()}>
       {STATUS_LABEL[props.trade.status]}
@@ -1089,6 +1147,8 @@ function Editor(props: {
   const patch = (): TradePatch => {
     const x = t();
     const p: TradePatch = {};
+    // The exchange keeps a synced one's prices and size: only the reader's words are theirs to change.
+    if (x.synced) return { ...(strategy() !== x.strategy ? { strategy: strategy() } : {}), ...(notes() !== x.notes ? { notes: notes() } : {}) };
     if (entry() !== base.entry) p.entry = Number(entry());
     if (stop() !== base.stop) p.stop = Number(stop());
     if (target() !== base.target) p.target = Number(target());
@@ -1110,6 +1170,7 @@ function Editor(props: {
   };
   const dirty = () => Object.keys(patch()).length > 0;
   const problem = (): string | null => {
+    if (t().synced) return null;
     const [e, s, g] = [Number(entry()), Number(stop()), Number(target())];
     if (!(e > 0 && s > 0 && g > 0)) return 'Entry, stop and target need prices.';
     if (t().side === 'long' ? !(s < e && e < g) : !(g < e && e < s)) return t().side === 'long' ? 'A long’s stop goes below its entry, its target above.' : 'A short’s stop goes above its entry, its target below.';
@@ -1153,10 +1214,18 @@ function Editor(props: {
   const qtyOf = (q: number) => `${Number(q.toPrecision(4))} ${coin()}`;
   const timeline = () => {
     const x = t();
-    const parts = [`Drawn ${stamp(x.startAt)}`];
+    const parts = x.synced ? [] : [`Drawn ${stamp(x.startAt)}`];
     if (x.openedAt !== null) parts.push(`opened ${stamp(x.openedAt)}`);
     if (x.closedAt !== null && !isLive(x)) parts.push(`closed ${stamp(x.closedAt)}${x.openedAt !== null ? ` · held ${held(x.closedAt - x.openedAt)}` : ''}`);
-    return parts.join(' · ');
+    const line = parts.join(' · ');
+    return x.synced ? line.charAt(0).toUpperCase() + line.slice(1) : line;
+  };
+  /** A synced one's gain on what its margin held, `+12.4%`. */
+  const onMargin = () => {
+    const x = t();
+    const m = (x.qty * x.entry) / (x.leverage > 0 ? x.leverage : 1);
+    const made = pnl(x);
+    return made === null || !(m > 0) ? '' : `${made >= 0 ? '+' : ''}${((made / m) * 100).toFixed(2)}% on margin`;
   };
   const modes = (): [Mode, string][] => [
     ['auto', t().tracked ? 'Price decides' : 'Still open'],
@@ -1194,12 +1263,13 @@ function Editor(props: {
             <div class="jd-result">
               <span class="jd-pnl num">{result() !== null ? money(result()) : isLive(t()) || t().status === 'cancelled' ? STATUS_LABEL[t().status] : money(pnl(t()))}</span>
               <Show when={result() !== null || (!isLive(t()) && t().status !== 'cancelled')}>
-                <span class="jd-r num">{rText(heroR())}</span>
+                <span class="jd-r num">{t().synced ? onMargin() : rText(heroR())}</span>
               </Show>
             </div>
             <span class="dim num">{timeline()}</span>
           </div>
 
+          <Show when={!t().synced} fallback={<Exchange trade={t()} price={(v) => props.price(t().market, v)} qtyOf={qtyOf} />}>
           <section class="jd-section">
             <h3>{tl('Plan')}</h3>
             <div class="jd-grid">
@@ -1247,6 +1317,7 @@ function Editor(props: {
             </Show>
             <p class="jd-hint dim">{modeHint()}</p>
           </section>
+          </Show>
 
           <section class="jd-section">
             <StrategyPicker value={strategy()} onChange={setStrategy} />

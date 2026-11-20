@@ -1,0 +1,13 @@
+[package]
+name = "tradoor-trade-wasm"
+description = "The order system's signer for the browser: the trade crate behind a plain interface of bytes, with no imports, loaded only when someone trades."
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tradoor-trade = { path = "../trade" }

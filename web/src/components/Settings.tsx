@@ -1,5 +1,5 @@
-import { setSmoothZoom, smoothZoom } from '../app/ui';
-import { createSignal, For, type JSX, onCleanup, Show } from 'solid-js';
+import { setSettingsSection, settingsSection, setSmoothZoom, smoothZoom } from '../app/ui';
+import { createSignal, For, type JSX, lazy, onCleanup, Show } from 'solid-js';
 import { api, errorText, type TelegramStatus } from '../lib/api';
 import { OWNER_PATTERN, ownerId, session, switchOwner } from '../lib/owner';
 import { ALL_EXCHANGES, ExchangeLogo } from '../lib/exchanges';
@@ -565,13 +565,20 @@ function OwnerRows() {
 const SECTIONS: { id: string; label: string; icon: IconName }[] = [
   { id: 'account', label: 'Account', icon: 'user' },
   { id: 'telegram', label: 'Telegram', icon: 'send' },
+  // Signed in with Telegram only: an account to keep the trading accounts with.
+  { id: 'trading', label: 'Trading accounts', icon: 'layers' },
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'themes', label: 'Themes', icon: 'droplet' },
   { id: 'layouts', label: 'Layouts', icon: 'layout' },
   { id: 'advanced', label: 'Advanced', icon: 'command' },
 ];
 /** The section open last, for the next time Settings opens. */
-const [section, setSection] = createSignal('account');
+const section = settingsSection;
+const setSection = setSettingsSection;
+/** The trading accounts, loaded with the order system the first time they are opened. */
+const TradingSettings = lazy(() => import('../trade/TradingSettings'));
+/** Trading accounts are for those signed in with Telegram; a local build, with no bot to sign in through, opens them as is. */
+const tradingOpen = () => import.meta.env.DEV || !!session();
 
 export function Settings(props: { onClose(): void }) {
   return (
@@ -596,7 +603,7 @@ export function Settings(props: { onClose(): void }) {
         </header>
         <div class="set">
           <nav class="set-nav">
-            <For each={SECTIONS}>
+            <For each={SECTIONS.filter((s) => s.id !== 'trading' || tradingOpen())}>
               {(s) => (
                 <button classList={{ on: section() === s.id }} onClick={() => setSection(s.id)}>
                   <Icon name={s.icon} size={14} />
@@ -611,6 +618,11 @@ export function Settings(props: { onClose(): void }) {
             </Show>
             <Show when={section() === 'telegram'}>
               <TelegramSection />
+            </Show>
+            <Show when={section() === 'trading'}>
+              <Show when={tradingOpen()} fallback={<p class="dim">{tl('Sign in with Telegram (Account, above) to add trading accounts.')}</p>}>
+                <TradingSettings />
+              </Show>
             </Show>
             <Show when={section() === 'general'}>
               <GeneralSection />

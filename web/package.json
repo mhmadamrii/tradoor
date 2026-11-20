@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
-    "test": "deno test --quiet",
+    "test": "deno test --quiet --allow-read=src/wasm",
     "size": "size-limit"
   },
   "size-limit": [
@@ -25,13 +25,25 @@
     {
       "name": "engine wasm",
       "path": "dist/assets/tradoor_wasm_bg-*.wasm",
-      "limit": "150 kB",
+      "limit": "156 kB",
       "gzip": true
     },
     {
       "name": "frost script wasm",
       "path": "dist/assets/frost-script-*.wasm",
       "limit": "90 kB",
+      "gzip": true
+    },
+    {
+      "name": "order signer wasm",
+      "path": "dist/assets/trade-*.wasm",
+      "limit": "32 kB",
+      "gzip": true
+    },
+    {
+      "name": "lighter signer wasm",
+      "path": "dist/assets/lighter-*.wasm",
+      "limit": "2800 kB",
       "gzip": true
     }
   ],

@@ -447,10 +447,19 @@ export class Flow {
   private loading = false;
   private batch: PrintMsg[] = [];
 
-  constructor(readonly market: string) {
+  /** `feed`: a book from elsewhere (a testnet's, from the trade worker) instead of the venue's sockets; it gives back how to stop. */
+  constructor(
+    readonly market: string,
+    feed?: (flow: Flow) => () => void,
+  ) {
     this.venue = parseMarket(market)?.venue ?? null;
     this.book = new Book(this.venue ? KEEP[this.venue] : undefined);
     this.sync = new BookSync(this.book, !!this.venue && wholeBook(this.venue));
+    if (feed) {
+      this.state = { prints: 'none', book: 'connecting' };
+      this.offs.push(feed(this));
+      return;
+    }
     if (!this.venue || this.venue === 'index') {
       this.state = { prints: 'none', book: 'none' };
       return;
@@ -561,6 +570,17 @@ export class Flow {
       this.sync.await();
       setTimeout(() => void this.snapshot(), 2_000);
     }
+  }
+
+  /** A whole book from a feed: read as the changes since the last, so pulls and stacks show. */
+  feedBook(bids: [number, number][], asks: [number, number][]): void {
+    if (!bids.length && !asks.length) return;
+    const now = Date.now();
+    if (this.book.synced) this.book.replace({ bids, asks }, now);
+    else this.book.reset({ bids, asks, last: undefined });
+    this.state.book = 'live';
+    this.bookAt = now;
+    this.version += 1;
   }
 
   /** The step between levels; 0 until the book has come. */

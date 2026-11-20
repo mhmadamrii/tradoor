@@ -11,12 +11,13 @@
  * orders — the trades of one time and side — not single fills.
  * In Training it also trades, on paper (see DomTrade); elsewhere it only reads.
  */
-import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createRoot, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { exchangeOfVenue } from '../lib/exchanges';
 import { useDismiss } from '../lib/dismiss';
 import { formatPrice } from '../lib/format';
 import { Icon } from '../lib/icons';
 import { bestAsk, bestBid, holdFlow, releaseFlow, Tally, type Flow, type FlowState, type Where } from '../lib/orderflow';
+import { readJson } from '../lib/prefs';
 import type { Order } from '../training/model';
 import { symbolOf } from '../lib/markets';
 import type { DomPanelState } from '../workspace/model';
@@ -26,6 +27,7 @@ import { compact, MIN_USD, minLabel, palette, sized, stepDecimals, useCanvas, ty
 import type { DomTrade } from './DomTrade';
 import { message } from './TapePanel';
 import { tl } from '../lib/i18n';
+import { tradeOn } from '../trade/present';
 
 const ROW = 16;
 const HEAD = 18;
@@ -81,6 +83,12 @@ export function autoTicks(tick: number, price: number): number {
   return ROW_TICKS.find((m) => m * tick >= want) ?? ROW_TICKS[ROW_TICKS.length - 1]!;
 }
 
+/** The account a DOM was opened for, if the Trade panel opened it. */
+function boundAccount(panelId: string): { account: string; testnet: boolean } | null {
+  const v = readJson(`domAccount:${panelId}`) as { account?: unknown; testnet?: unknown } | null;
+  return v && typeof v.account === 'string' ? { account: v.account, testnet: v.testnet === true } : null;
+}
+
 const STATE_LABEL: Partial<Record<FlowState, string>> = { connecting: 'Connecting', stalled: 'Stalled', retrying: 'Reconnecting' };
 
 interface Stats {
@@ -99,11 +107,33 @@ export function DomPanel(props: { panel: DomPanelState; trade?: DomTrade; patch?
   const id = props.panel.id;
   const market = () => marketOf(props.panel);
   const patch = (p: Partial<DomPanelState>) => (props.patch ? props.patch(p) : patchPanel(id, p));
-  /** Trading: only where Training handed its account in. */
+  /**
+   * Trading: Training's paper account where it handed one in; elsewhere, a
+   * connected Hyperliquid account on a Hyperliquid market (trade/dom-live),
+   * loaded only then.
+   */
+  const [live, setLive] = createSignal<DomTrade | null>(null);
+  /**
+   * The account a DOM opened from the Trade panel trades (its DOM button), kept in this browser and
+   * never in the workspace; on testnet it draws that exchange's testnet book, at testnet's prices.
+   */
+  const bound = props.trade ? null : boundAccount(id);
+  createEffect(() => {
+    if (props.trade || !tradeOn() || !/^(hyperliquid|lighter)-perp:/.test(market())) return setLive(null);
+    let alive = true;
+    let dispose: (() => void) | undefined;
+    void import('../trade/dom-live').then((m) => alive && createRoot((d) => ((dispose = d), setLive(() => m.liveDomTrade(market, id, bound)))));
+    onCleanup(() => {
+      alive = false;
+      dispose?.();
+      setLive(null);
+    });
+  });
+  const acting = () => props.trade ?? live() ?? undefined;
   const trade = {
-    live: () => props.trade?.live() === true,
-    orders: () => props.trade?.orders() ?? [],
-    position: () => props.trade?.position(),
+    live: () => acting()?.live() === true,
+    orders: () => acting()?.orders() ?? [],
+    position: () => acting()?.position(),
   };
   const [flow, setFlow] = createSignal<Flow | null>(null);
   const [state, setState] = createSignal<FlowState>('connecting');
@@ -118,9 +148,25 @@ export function DomPanel(props: { panel: DomPanelState; trade?: DomTrade; patch?
   useDismiss(clearOpen, () => setClearOpen(false));
 
   createEffect(() => {
-    const held = holdFlow(market());
-    setFlow(held);
+    const m = market();
     setAuto(true);
+    if (bound?.testnet) {
+      let alive = true;
+      let own: Flow | null = null;
+      void import('../trade/dom-book').then((x) => {
+        if (!alive) return;
+        own = x.accountFlow(m, bound.account);
+        setFlow(own);
+      });
+      onCleanup(() => {
+        alive = false;
+        own?.close();
+        setFlow(null);
+      });
+      return;
+    }
+    const held = holdFlow(m);
+    setFlow(held);
     onCleanup(() => releaseFlow(held));
   });
 
@@ -514,6 +560,11 @@ export function DomPanel(props: { panel: DomPanelState; trade?: DomTrade; patch?
         <Show when={!props.trade} fallback={<span class="dom-coin">{symbolOf(market())}</span>}>
           <MarketButton panelId={id} market={market()} />
         </Show>
+        <Show when={bound?.testnet}>
+          <span class="om-testnet" data-tip="Testnet's own book on this exchange, at testnet's prices: what your testnet account trades. Its trades are not read, so Bought, Sold and Volume stay empty">
+            Testnet
+          </span>
+        </Show>
         <span class="spacer" />
         <Show when={STATE_LABEL[state()]}>{(label) => <span class={`conn ${state()}`}>{label()}</span>}</Show>
         <select data-tip="Price a row spans" onChange={(e) => patch({ ticks: Number(e.currentTarget.value) })}>
@@ -571,7 +622,7 @@ export function DomPanel(props: { panel: DomPanelState; trade?: DomTrade; patch?
           <Resets label="Bought & sold start again" tip="On the clock: 5m at :00, :05, :10…" choices={RESET_TRADES} value={props.panel.resetTrades} pick={(v) => patch({ resetTrades: v })} />
         </div>
       </Show>
-      {props.trade?.bar()}
+      {acting()?.bar()}
       <div
         class="flowcanvas"
         ref={host}
@@ -606,16 +657,16 @@ export function DomPanel(props: { panel: DomPanelState; trade?: DomTrade; patch?
           const d = drag;
           drag = null;
           if (d) {
-            if (r === d.from) props.trade?.cancel(d.order);
-            else if (r >= 0) props.trade?.move(d.order, priceAt(r));
+            if (r === d.from) acting()?.cancel(d.order);
+            else if (r >= 0) acting()?.move(d.order, priceAt(r));
             view.redraw();
             return;
           }
           if (r < 0) return;
-          if (e.shiftKey) props.trade?.exit('sl', priceAt(r));
-          else if (e.ctrlKey || e.metaKey) props.trade?.exit('tp', priceAt(r));
-          else if (col === 'bids') props.trade?.limit(true, priceAt(r));
-          else if (col === 'asks') props.trade?.limit(false, priceAt(r));
+          if (e.shiftKey) acting()?.exit('sl', priceAt(r));
+          else if (e.ctrlKey || e.metaKey) acting()?.exit('tp', priceAt(r));
+          else if (col === 'bids') acting()?.limit(true, priceAt(r));
+          else if (col === 'asks') acting()?.limit(false, priceAt(r));
         }}
         onPointerLeave={() => {
           hover = -1;
