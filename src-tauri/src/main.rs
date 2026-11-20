@@ -14,7 +14,13 @@
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
-const DEFAULT_URL: &str = "http://127.0.0.1:8080";
+// Fixed at build time (`TRADOOR_URL=https://... cargo tauri build`), because an
+// app opened from Finder does not see the shell's environment. The run-time
+// variable still wins when set.
+const DEFAULT_URL: &str = match option_env!("TRADOOR_URL") {
+    Some(url) => url,
+    None => "http://127.0.0.1:8080",
+};
 
 fn main() {
     tauri::Builder::default()
